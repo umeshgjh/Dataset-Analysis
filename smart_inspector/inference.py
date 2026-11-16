@@ -4,6 +4,11 @@ A column receives a type only when one compatible kind covers at least the
 dominance threshold. Anything else is ``mixed``, and the values that do not
 fit are returned for the report. String columns are then split into short
 categorical labels and free text.
+
+Short code columns are the exception. When integer-like tokens sit beside text
+codes that contain both letters and digits, and those codes use more than one
+alphabetic pattern, the column is categorical. An integer or float column that
+already meets the dominance threshold is left numeric.
 """
 
 from __future__ import annotations
@@ -126,19 +131,39 @@ def infer_column(values: list[Any], config: InspectionConfig) -> InferenceResult
     else:
         inferred = "mixed"
 
-    note = _classification_note(
-        inferred=inferred,
-        dominant=dominant,
-        covered=covered,
-        non_missing=len(observed),
-        threshold=config.dominance_threshold,
-        type_counts=type_counts,
-        unexpected_count=unexpected_count,
-        median_length=median_length,
-        max_length=config.categorical_max_length,
-        multiline=multiline,
-        format_note=format_note,
-    )
+    codes = _code_column(observed, config)
+    numeric_accepted = accepted and dominant in {"integer", "float"}
+    if codes is not None and not numeric_accepted:
+        inferred = "categorical"
+        median_length = codes.median_length
+        multiline = False
+        format_note = ""
+        unexpected_values = []
+        unexpected_count = 0
+        unexpected_distinct_count = 0
+        note = _code_column_note(
+            dominant=dominant,
+            covered=covered,
+            non_missing=len(observed),
+            threshold=config.dominance_threshold,
+            accepted_text=accepted and dominant == "string",
+            codes=codes,
+            max_length=config.categorical_max_length,
+        )
+    else:
+        note = _classification_note(
+            inferred=inferred,
+            dominant=dominant,
+            covered=covered,
+            non_missing=len(observed),
+            threshold=config.dominance_threshold,
+            type_counts=type_counts,
+            unexpected_count=unexpected_count,
+            median_length=median_length,
+            max_length=config.categorical_max_length,
+            multiline=multiline,
+            format_note=format_note,
+        )
     numeric_values: list[int | float] = []
     numeric_rows: list[int] = []
     numeric_raw: list[Any] = []
@@ -172,6 +197,119 @@ def infer_column(values: list[Any], config: InspectionConfig) -> InferenceResult
         numeric_raw=numeric_raw,
         median_length=median_length,
     )
+
+
+@dataclass(frozen=True)
+class _CodeColumn:
+    """Evidence that a short-token column is a code set rather than a measurement."""
+
+    median_length: float
+    integer_count: int
+    string_count: int
+    shape_count: int
+    examples: tuple[str, ...]
+
+
+def _code_column(
+    observed: list[tuple[int, Any, str]],
+    config: InspectionConfig,
+) -> _CodeColumn | None:
+    """Detect short codes that mix integer-like tokens with letter-and-digit labels.
+
+    The alphabetic pattern of a code is the letters that remain after digits and
+    signs are removed. One repeated pattern, such as ``bad0`` and ``bad1``, is
+    not enough: that shape is left on the ordinary mixed or numeric path. Two
+    different patterns are required. Floats, booleans, dates, whitespace, and
+    tokens longer than the categorical limit also decline the exception.
+    """
+    lengths: list[int] = []
+    integer_count = 0
+    string_count = 0
+    compound_counts: Counter[str] = Counter()
+    shapes: set[str] = set()
+    limit = config.categorical_max_length
+    for _row_number, value, kind in observed:
+        if kind not in {"integer", "string"}:
+            return None
+        text = value.strip() if isinstance(value, str) else str(value)
+        if text == "" or any(character.isspace() for character in text):
+            return None
+        if len(text) > limit:
+            return None
+        lengths.append(len(text))
+        if kind == "integer":
+            integer_count += 1
+            continue
+        string_count += 1
+        if not any(character.isalpha() for character in text):
+            return None
+        if not any(character.isdigit() for character in text):
+            continue
+        shape = "".join(character.lower() for character in text if character.isalpha())
+        if shape == "":
+            return None
+        shapes.add(shape)
+        compound_counts[text] += 1
+    if integer_count < 1 or len(shapes) < 2 or not lengths:
+        return None
+    examples = tuple(value for value, _count in compound_counts.most_common(3))
+    median_length = float(np.median(np.asarray(lengths, dtype=float)))
+    return _CodeColumn(
+        median_length=median_length,
+        integer_count=integer_count,
+        string_count=string_count,
+        shape_count=len(shapes),
+        examples=examples,
+    )
+
+
+def _code_column_note(
+    *,
+    dominant: str,
+    covered: int,
+    non_missing: int,
+    threshold: float,
+    accepted_text: bool,
+    codes: _CodeColumn,
+    max_length: int,
+) -> str:
+    """Explain why integer-like tokens were kept as category labels."""
+    percent = 100.0 * covered / non_missing
+    shown = ", ".join(repr(example) for example in codes.examples)
+    integer_word = "value is" if codes.integer_count == 1 else "values are"
+    text_word = "is" if codes.string_count == 1 else "are"
+    pattern_word = "pattern" if codes.shape_count == 1 else "patterns"
+    sentences = [
+        (
+            "Classified as categorical because the values are short codes rather than "
+            f"measurements. {codes.integer_count} non-missing {integer_word} integer-like and "
+            f"{codes.string_count} {text_word} text. The letter-and-digit codes use "
+            f"{codes.shape_count} different alphabetic {pattern_word}, including {shown}."
+        ),
+        (
+            "Those patterns are different, so the integer-like tokens stay in the same "
+            "label set. They are not listed as unexpected, and numeric summaries are omitted "
+            "so a mean is not reported for codes."
+        ),
+    ]
+    if accepted_text:
+        sentences.append(
+            f"Text covers {covered} of {non_missing} non-missing values ({percent:.2f}%), "
+            f"which meets the dominance threshold of {threshold:.0%}. The integer-like "
+            "labels are still part of the category."
+        )
+    else:
+        sentences.append(
+            f"The closest single kind is {dominant}, covering {covered} of {non_missing} "
+            f"non-missing values ({percent:.2f}%), below the dominance threshold of "
+            f"{threshold:.0%}. The column is categorical rather than mixed because the "
+            "two forms belong to one code set."
+        )
+    sentences.append(
+        f"Median label length is {codes.median_length:.1f} characters, within the limit "
+        f"of {max_length}."
+    )
+    return " ".join(sentences)
 
 
 def _choose_dominant(kinds: list[str]) -> str:

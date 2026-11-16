@@ -37,6 +37,13 @@ TYPE_DEFINITION = (
     "then integer, then float, then string. "
     "If the dominant type covers at least the dominance threshold, that type is accepted. "
     "Otherwise the column is mixed. "
+    "One exception keeps a short-token column categorical when integer-like values appear "
+    "together with text codes that contain both letters and digits and those codes use at least "
+    "two different alphabetic patterns (the letters that remain after digits and signs are removed). "
+    "The integer-like tokens are labels in that code set: they are not listed as unexpected, and the "
+    "column is not given a numeric mean. This exception does not apply when an integer or float type "
+    "already meets the dominance threshold, and it does not apply when every letter-and-digit code "
+    "shares one alphabetic pattern. "
     "An accepted string column is categorical when its median character length is within the "
     "configured label length and no value contains a newline; otherwise it is free text. "
     "An all-missing column is unknown. "
@@ -63,15 +70,17 @@ HIGH_CARDINALITY_DEFINITION = (
     "(unique non-missing values divided by non-missing values) is greater than or equal to "
     "the configured threshold and the column has at least two distinct values. "
     "Constant columns are not flagged by this rule. "
-    "Numeric identifiers stay numeric, so they are not flagged here; their unique counts are still reported."
+    "Numeric identifiers stay numeric, so they are not flagged here; their unique counts are still reported. "
+    "The finding records many distinct values. It is an observation about an identifier or another "
+    "near-unique label, not a claim that the column is defective."
 )
 
 SEVERITY_DEFINITION = (
     "error: the column has no stable type, or at least 90% of its values are missing. "
     "warning: a quality issue is likely but may still be legitimate, such as duplicate rows, "
     "a constant field, moderate missingness, or a minority of values that do not match the dominant type. "
-    "info: a potential anomaly to review. Statistical outliers and high-cardinality categories are info "
-    "because they are not evidence that a value is wrong."
+    "info: something to review that is not a confirmed error. Statistical outliers are potential anomalies. "
+    "High cardinality is an observation that a column has many distinct values, often because it is an identifier."
 )
 
 ROW_NUMBER_DEFINITION = (

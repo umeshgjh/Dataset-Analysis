@@ -1,0 +1,66 @@
+[
+  {
+    "subject": "alpha",
+    "temperature_c": 20.1,
+    "replicate": 1,
+    "recorded_on": "2024-03-01",
+    "passed": true,
+    "method": "A"
+  },
+  {
+    "subject": "alpha",
+    "temperature_c": 20.4,
+    "replicate": 2,
+    "recorded_on": "2024-03-01",
+    "passed": false,
+    "method": "B"
+  },
+  {
+    "subject": "beta",
+    "temperature_c": 21.0,
+    "replicate": 1,
+    "recorded_on": "2024-03-02",
+    "passed": true,
+    "method": "A"
+  },
+  {
+    "subject": "beta",
+    "temperature_c": 20.8,
+    "replicate": 2,
+    "recorded_on": "2024-03-02",
+    "passed": true,
+    "method": "B"
+  },
+  {
+    "subject": "alpha",
+    "temperature_c": 21.2,
+    "replicate": 1,
+    "recorded_on": "2024-03-03",
+    "passed": false,
+    "method": "A"
+  },
+  {
+    "subject": "beta",
+    "temperature_c": 20.5,
+    "replicate": 2,
+    "recorded_on": "2024-03-03",
+    "passed": true,
+    "method": "B"
+  },
+  {
+    "subject": "alpha",
+    "temperature_c": 20.9,
+    "replicate": 1,
+    "recorded_on": "2024-03-04",
+    "passed": false,
+    "method": "A"
+  },
+  {
+    "subject": "beta",
+    "temperature_c": 21.1,
+    "replicate": 2,
+    "recorded_on": "2024-03-04",
+    "passed": true,
+    "method": "B"
+  }
+]

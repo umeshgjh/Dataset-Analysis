@@ -1,0 +1,13 @@
+sample_id,site,measurement,score,batch,group_code,notes
+S01,north,1,10,1,1,ok
+S02,north,2,11,2,2,check
+S03,north,3,12,3,mm2,check
+S04,north,4,9,abc,-42m,check
+S05,north,5,10,1,3,
+S06,north,6,11,2,1,
+S07,north,7,bad,3,mm2,ok
+S08,north,8,13,abc,2,
+S09,north,9,12,1,-42m,
+S10,north,100,10,2,3,
+S11,north,5,11,x,mm2,
+S01,north,1,10,1,1,ok

@@ -118,8 +118,9 @@ def _column_types(payload: dict[str, Any]) -> str:
         "",
         (
             "Types are inferred from the non-missing values. `dominant_type` is the "
-            "kind used to decide which values are unexpected. `inferred_type` is "
-            "`categorical` or `string` for an accepted text column, `mixed` when no "
+            "kind that covers the most values. `inferred_type` is `categorical` for short "
+            "labels, including a code column whose integer-like tokens and letter-and-digit "
+            "codes belong to one label set. It is `string` for free text, `mixed` when no "
             "kind is stable, and `unknown` when every value is missing."
         ),
         "",

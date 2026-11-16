@@ -1,0 +1,745 @@
+{
+  "schema_version": "1.0",
+  "tool": {
+    "name": "Smart Data Inspector",
+    "version": "1.0.0"
+  },
+  "runtime": {
+    "python": "3.12.15",
+    "pandas": "3.1.1",
+    "numpy": "2.5.5"
+  },
+  "inspected_at": "2026-11-16T12:53:45Z",
+  "input_file": {
+    "path": "examples/research_data.csv",
+    "absolute_path": "/Users/umeshgjh/Projects/A*/Dataset-Analysis/examples/research_data.csv",
+    "name": "research_data.csv",
+    "format": "csv",
+    "size_bytes": 537,
+    "encoding": "utf-8"
+  },
+  "overview": {
+    "row_count": 11,
+    "column_count": 10,
+    "column_names": [
+      "record_id",
+      "measurement",
+      "category",
+      "enrolled",
+      "observed_on",
+      "amount",
+      "comment",
+      "unused",
+      "source",
+      "code"
+    ]
+  },
+  "columns": [
+    {
+      "name": "record_id",
+      "inferred_type": "categorical",
+      "dominant_type": "string",
+      "missing_count": 0,
+      "missing_percentage": 0.0,
+      "missing_fraction": 0.0,
+      "missing_token_counts": {},
+      "non_missing_count": 11,
+      "unique_non_missing": 10,
+      "type_counts": {
+        "boolean": 0,
+        "integer": 0,
+        "float": 0,
+        "datetime": 0,
+        "string": 11
+      },
+      "unexpected_count": 0,
+      "unexpected_distinct_count": 0,
+      "unexpected_values": [],
+      "classification_note": "Accepted as string because every non-missing value is text. Classified as categorical because the values are short labels (median length 2.0 characters, limit 40) and none contain a newline.",
+      "numeric_summary": null,
+      "categorical_summary": {
+        "unique_count": 10,
+        "most_frequent_value": "R1",
+        "most_frequent_count": 2,
+        "most_frequent_percentage": 18.181818181818183,
+        "value_truncated": false
+      }
+    },
+    {
+      "name": "measurement",
+      "inferred_type": "integer",
+      "dominant_type": "integer",
+      "missing_count": 0,
+      "missing_percentage": 0.0,
+      "missing_fraction": 0.0,
+      "missing_token_counts": {},
+      "non_missing_count": 11,
+      "unique_non_missing": 10,
+      "type_counts": {
+        "boolean": 0,
+        "integer": 11,
+        "float": 0,
+        "datetime": 0,
+        "string": 0
+      },
+      "unexpected_count": 0,
+      "unexpected_distinct_count": 0,
+      "unexpected_values": [],
+      "classification_note": "Accepted as integer because every non-missing value is an integer.",
+      "numeric_summary": {
+        "count": 11,
+        "minimum": 1,
+        "maximum": 100,
+        "mean": 13.272727272727273,
+        "mean_note": null,
+        "excluded_non_numeric": 0,
+        "outlier_assessment": "completed",
+        "outlier_assessment_note": null
+      },
+      "categorical_summary": null
+    },
+    {
+      "name": "category",
+      "inferred_type": "categorical",
+      "dominant_type": "string",
+      "missing_count": 0,
+      "missing_percentage": 0.0,
+      "missing_fraction": 0.0,
+      "missing_token_counts": {},
+      "non_missing_count": 11,
+      "unique_non_missing": 3,
+      "type_counts": {
+        "boolean": 0,
+        "integer": 0,
+        "float": 0,
+        "datetime": 0,
+        "string": 11
+      },
+      "unexpected_count": 0,
+      "unexpected_distinct_count": 0,
+      "unexpected_values": [],
+      "classification_note": "Accepted as string because every non-missing value is text. Classified as categorical because the values are short labels (median length 1.0 characters, limit 40) and none contain a newline.",
+      "numeric_summary": null,
+      "categorical_summary": {
+        "unique_count": 3,
+        "most_frequent_value": "A",
+        "most_frequent_count": 5,
+        "most_frequent_percentage": 45.45454545454545,
+        "value_truncated": false
+      }
+    },
+    {
+      "name": "enrolled",
+      "inferred_type": "boolean",
+      "dominant_type": "boolean",
+      "missing_count": 0,
+      "missing_percentage": 0.0,
+      "missing_fraction": 0.0,
+      "missing_token_counts": {},
+      "non_missing_count": 11,
+      "unique_non_missing": 2,
+      "type_counts": {
+        "boolean": 11,
+        "integer": 0,
+        "float": 0,
+        "datetime": 0,
+        "string": 0
+      },
+      "unexpected_count": 0,
+      "unexpected_distinct_count": 0,
+      "unexpected_values": [],
+      "classification_note": "Accepted as boolean because every non-missing value is a JSON boolean or one of true, false, yes, and no.",
+      "numeric_summary": null,
+      "categorical_summary": null
+    },
+    {
+      "name": "observed_on",
+      "inferred_type": "datetime",
+      "dominant_type": "datetime",
+      "missing_count": 0,
+      "missing_percentage": 0.0,
+      "missing_fraction": 0.0,
+      "missing_token_counts": {},
+      "non_missing_count": 11,
+      "unique_non_missing": 10,
+      "type_counts": {
+        "boolean": 0,
+        "integer": 0,
+        "float": 0,
+        "datetime": 10,
+        "string": 1
+      },
+      "unexpected_count": 1,
+      "unexpected_distinct_count": 1,
+      "unexpected_values": [
+        {
+          "value": "not-a-date",
+          "kind": "string",
+          "count": 1,
+          "first_row": 6,
+          "truncated": false
+        }
+      ],
+      "classification_note": "Accepted as datetime because that type covers 10 of 11 non-missing values (90.91%), which meets the dominance threshold of 80%. 1 non-missing value does not match datetime and is reported as unexpected.",
+      "numeric_summary": null,
+      "categorical_summary": null
+    },
+    {
+      "name": "amount",
+      "inferred_type": "float",
+      "dominant_type": "float",
+      "missing_count": 0,
+      "missing_percentage": 0.0,
+      "missing_fraction": 0.0,
+      "missing_token_counts": {},
+      "non_missing_count": 11,
+      "unique_non_missing": 10,
+      "type_counts": {
+        "boolean": 0,
+        "integer": 0,
+        "float": 10,
+        "datetime": 0,
+        "string": 1
+      },
+      "unexpected_count": 1,
+      "unexpected_distinct_count": 1,
+      "unexpected_values": [
+        {
+          "value": "bad",
+          "kind": "string",
+          "count": 1,
+          "first_row": 7,
+          "truncated": false
+        }
+      ],
+      "classification_note": "Accepted as float because that type covers 10 of 11 non-missing values (90.91%), which meets the dominance threshold of 80%. 1 non-missing value does not match float and is reported as unexpected.",
+      "numeric_summary": {
+        "count": 10,
+        "minimum": 8.5,
+        "maximum": 14.5,
+        "mean": 10.85,
+        "mean_note": null,
+        "excluded_non_numeric": 1,
+        "outlier_assessment": "completed",
+        "outlier_assessment_note": null
+      },
+      "categorical_summary": null
+    },
+    {
+      "name": "comment",
+      "inferred_type": "categorical",
+      "dominant_type": "string",
+      "missing_count": 1,
+      "missing_percentage": 9.090909090909092,
+      "missing_fraction": 0.09090909090909091,
+      "missing_token_counts": {
+        "<empty>": 1
+      },
+      "non_missing_count": 10,
+      "unique_non_missing": 3,
+      "type_counts": {
+        "boolean": 0,
+        "integer": 0,
+        "float": 0,
+        "datetime": 0,
+        "string": 10
+      },
+      "unexpected_count": 0,
+      "unexpected_distinct_count": 0,
+      "unexpected_values": [],
+      "classification_note": "Accepted as string because every non-missing value is text. Classified as categorical because the values are short labels (median length 2.0 characters, limit 40) and none contain a newline.",
+      "numeric_summary": null,
+      "categorical_summary": {
+        "unique_count": 3,
+        "most_frequent_value": "ok",
+        "most_frequent_count": 6,
+        "most_frequent_percentage": 60.0,
+        "value_truncated": false
+      }
+    },
+    {
+      "name": "unused",
+      "inferred_type": "unknown",
+      "dominant_type": "unknown",
+      "missing_count": 11,
+      "missing_percentage": 100.0,
+      "missing_fraction": 1.0,
+      "missing_token_counts": {
+        "<empty>": 7,
+        "n/a": 4
+      },
+      "non_missing_count": 0,
+      "unique_non_missing": 0,
+      "type_counts": {
+        "boolean": 0,
+        "integer": 0,
+        "float": 0,
+        "datetime": 0,
+        "string": 0
+      },
+      "unexpected_count": 0,
+      "unexpected_distinct_count": 0,
+      "unexpected_values": [],
+      "classification_note": "Every value is missing, so the column type is unknown.",
+      "numeric_summary": null,
+      "categorical_summary": null
+    },
+    {
+      "name": "source",
+      "inferred_type": "categorical",
+      "dominant_type": "string",
+      "missing_count": 0,
+      "missing_percentage": 0.0,
+      "missing_fraction": 0.0,
+      "missing_token_counts": {},
+      "non_missing_count": 11,
+      "unique_non_missing": 1,
+      "type_counts": {
+        "boolean": 0,
+        "integer": 0,
+        "float": 0,
+        "datetime": 0,
+        "string": 11
+      },
+      "unexpected_count": 0,
+      "unexpected_distinct_count": 0,
+      "unexpected_values": [],
+      "classification_note": "Accepted as string because every non-missing value is text. Classified as categorical because the values are short labels (median length 3.0 characters, limit 40) and none contain a newline.",
+      "numeric_summary": null,
+      "categorical_summary": {
+        "unique_count": 1,
+        "most_frequent_value": "lab",
+        "most_frequent_count": 11,
+        "most_frequent_percentage": 100.0,
+        "value_truncated": false
+      }
+    },
+    {
+      "name": "code",
+      "inferred_type": "mixed",
+      "dominant_type": "integer",
+      "missing_count": 0,
+      "missing_percentage": 0.0,
+      "missing_fraction": 0.0,
+      "missing_token_counts": {},
+      "non_missing_count": 11,
+      "unique_non_missing": 10,
+      "type_counts": {
+        "boolean": 0,
+        "integer": 6,
+        "float": 0,
+        "datetime": 0,
+        "string": 5
+      },
+      "unexpected_count": 5,
+      "unexpected_distinct_count": 5,
+      "unexpected_values": [
+        {
+          "value": "x",
+          "kind": "string",
+          "count": 1,
+          "first_row": 2,
+          "truncated": false
+        },
+        {
+          "value": "y",
+          "kind": "string",
+          "count": 1,
+          "first_row": 4,
+          "truncated": false
+        },
+        {
+          "value": "z",
+          "kind": "string",
+          "count": 1,
+          "first_row": 6,
+          "truncated": false
+        },
+        {
+          "value": "q",
+          "kind": "string",
+          "count": 1,
+          "first_row": 8,
+          "truncated": false
+        },
+        {
+          "value": "qq",
+          "kind": "string",
+          "count": 1,
+          "first_row": 10,
+          "truncated": false
+        }
+      ],
+      "classification_note": "Classified as mixed because the dominant type integer covers 6 of 11 non-missing values (54.55%), below the dominance threshold of 80%. Unexpected values are listed separately. Numeric summaries are omitted for mixed columns so a mean is not reported for an unstable type.",
+      "numeric_summary": null,
+      "categorical_summary": null
+    }
+  ],
+  "duplicates": {
+    "extra_duplicate_rows": 1,
+    "rows_in_duplicate_groups": 2,
+    "duplicate_group_count": 1,
+    "definition": "An exact duplicate is a row that matches another row on every column. All missing representations match each other, including empty cells, configured missing tokens, JSON null, and a JSON key that is absent from one object. Non-missing values must also have the same Python type: true is not a duplicate of 1, and the string \"1\" is not a duplicate of the number 1. Text is compared exactly, so leading or trailing spaces are preserved. The duplicate-row count is the number of extra copies beyond the first occurrence of each duplicated row."
+  },
+  "numeric_summaries": [
+    {
+      "column": "measurement",
+      "count": 11,
+      "minimum": 1,
+      "maximum": 100,
+      "mean": 13.272727272727273,
+      "mean_note": null,
+      "excluded_non_numeric": 0,
+      "outlier_assessment": "completed",
+      "outlier_assessment_note": null
+    },
+    {
+      "column": "amount",
+      "count": 10,
+      "minimum": 8.5,
+      "maximum": 14.5,
+      "mean": 10.85,
+      "mean_note": null,
+      "excluded_non_numeric": 1,
+      "outlier_assessment": "completed",
+      "outlier_assessment_note": null
+    }
+  ],
+  "categorical_summaries": [
+    {
+      "column": "record_id",
+      "unique_count": 10,
+      "most_frequent_value": "R1",
+      "most_frequent_count": 2,
+      "most_frequent_percentage": 18.181818181818183,
+      "value_truncated": false
+    },
+    {
+      "column": "category",
+      "unique_count": 3,
+      "most_frequent_value": "A",
+      "most_frequent_count": 5,
+      "most_frequent_percentage": 45.45454545454545,
+      "value_truncated": false
+    },
+    {
+      "column": "comment",
+      "unique_count": 3,
+      "most_frequent_value": "ok",
+      "most_frequent_count": 6,
+      "most_frequent_percentage": 60.0,
+      "value_truncated": false
+    },
+    {
+      "column": "source",
+      "unique_count": 1,
+      "most_frequent_value": "lab",
+      "most_frequent_count": 11,
+      "most_frequent_percentage": 100.0,
+      "value_truncated": false
+    }
+  ],
+  "findings": [
+    {
+      "rule_id": "missingness",
+      "issue_title": "High missingness in column 'unused'",
+      "severity": "error",
+      "scope": "column",
+      "column": "unused",
+      "affected_records": 11,
+      "evidence": {
+        "missing_count": 11,
+        "non_missing_count": 0,
+        "row_count": 11,
+        "missing_fraction": 1.0,
+        "missing_percentage": 100.0,
+        "threshold": 0.2,
+        "missing_tokens": {
+          "<empty>": 7,
+          "n/a": 4
+        }
+      },
+      "explanation": "11 of 11 values (100.00%) in column 'unused' are missing, which exceeds the configured threshold of 20.00% of rows. At least 90% of the column is missing, so it is unlikely to support analysis without a documented reason.",
+      "suggested_action": "Confirm whether the missing values are expected. If the column is unused, exclude it from analysis. If the values should be present, check the export or the collection process. Do not impute until the reason is understood."
+    },
+    {
+      "rule_id": "duplicates",
+      "issue_title": "Duplicate rows detected",
+      "severity": "warning",
+      "scope": "dataset",
+      "column": null,
+      "affected_records": 1,
+      "evidence": {
+        "extra_duplicate_rows": 1,
+        "rows_in_duplicate_groups": 2,
+        "duplicate_group_count": 1,
+        "row_count": 11
+      },
+      "explanation": "1 extra row is an exact copy of an earlier row (2 rows sit in 1 duplicated group). Exact means every column matches, with all missing representations treated as equal and with text and types compared exactly. Duplicates can be legitimate repeated measurements or an export problem. This finding does not by itself prove the rows are wrong.",
+      "suggested_action": "Review the duplicated rows with the data owner. Keep them if they are legitimate repeated observations. If they come from a join or an export, drop the extra copies before analysis. This tool does not delete rows."
+    },
+    {
+      "rule_id": "mixed_types",
+      "issue_title": "Inconsistent values in column 'observed_on'",
+      "severity": "warning",
+      "scope": "column",
+      "column": "observed_on",
+      "affected_records": 1,
+      "evidence": {
+        "inferred_type": "datetime",
+        "dominant_type": "datetime",
+        "unexpected_count": 1,
+        "unexpected_distinct_count": 1,
+        "non_missing_count": 11,
+        "unexpected_fraction": 0.09090909090909091,
+        "dominance_threshold": 0.8,
+        "type_counts": {
+          "boolean": 0,
+          "integer": 0,
+          "float": 0,
+          "datetime": 10,
+          "string": 1
+        },
+        "sample_values": [
+          {
+            "value": "not-a-date",
+            "kind": "string",
+            "count": 1,
+            "first_row": 6,
+            "truncated": false
+          }
+        ],
+        "sample_limit": 10,
+        "sample_truncated": false
+      },
+      "explanation": "The column was accepted as datetime because datetime is the dominant type, but 1 of 11 non-missing values (9.09%) does not match it. Those values were not converted.",
+      "suggested_action": "Inspect the unexpected values in the evidence. Correct formatting errors, or split the column if it intentionally mixes different kinds of values. Do not convert the column automatically; that would hide the inconsistent records."
+    },
+    {
+      "rule_id": "mixed_types",
+      "issue_title": "Inconsistent values in column 'amount'",
+      "severity": "warning",
+      "scope": "column",
+      "column": "amount",
+      "affected_records": 1,
+      "evidence": {
+        "inferred_type": "float",
+        "dominant_type": "float",
+        "unexpected_count": 1,
+        "unexpected_distinct_count": 1,
+        "non_missing_count": 11,
+        "unexpected_fraction": 0.09090909090909091,
+        "dominance_threshold": 0.8,
+        "type_counts": {
+          "boolean": 0,
+          "integer": 0,
+          "float": 10,
+          "datetime": 0,
+          "string": 1
+        },
+        "sample_values": [
+          {
+            "value": "bad",
+            "kind": "string",
+            "count": 1,
+            "first_row": 7,
+            "truncated": false
+          }
+        ],
+        "sample_limit": 10,
+        "sample_truncated": false
+      },
+      "explanation": "The column was accepted as float because float is the dominant type, but 1 of 11 non-missing values (9.09%) does not match it. Those values were not converted.",
+      "suggested_action": "Inspect the unexpected values in the evidence. Correct formatting errors, or split the column if it intentionally mixes different kinds of values. Do not convert the column automatically; that would hide the inconsistent records."
+    },
+    {
+      "rule_id": "mixed_types",
+      "issue_title": "Inconsistent values in column 'code'",
+      "severity": "error",
+      "scope": "column",
+      "column": "code",
+      "affected_records": 5,
+      "evidence": {
+        "inferred_type": "mixed",
+        "dominant_type": "integer",
+        "unexpected_count": 5,
+        "unexpected_distinct_count": 5,
+        "non_missing_count": 11,
+        "unexpected_fraction": 0.45454545454545453,
+        "dominance_threshold": 0.8,
+        "type_counts": {
+          "boolean": 0,
+          "integer": 6,
+          "float": 0,
+          "datetime": 0,
+          "string": 5
+        },
+        "sample_values": [
+          {
+            "value": "x",
+            "kind": "string",
+            "count": 1,
+            "first_row": 2,
+            "truncated": false
+          },
+          {
+            "value": "y",
+            "kind": "string",
+            "count": 1,
+            "first_row": 4,
+            "truncated": false
+          },
+          {
+            "value": "z",
+            "kind": "string",
+            "count": 1,
+            "first_row": 6,
+            "truncated": false
+          },
+          {
+            "value": "q",
+            "kind": "string",
+            "count": 1,
+            "first_row": 8,
+            "truncated": false
+          },
+          {
+            "value": "qq",
+            "kind": "string",
+            "count": 1,
+            "first_row": 10,
+            "truncated": false
+          }
+        ],
+        "sample_limit": 10,
+        "sample_truncated": false
+      },
+      "explanation": "No type reached the dominance threshold of 80%. The closest type is integer, and 5 of 11 non-missing values (45.45%) do not match it. The column is therefore mixed rather than coerced.",
+      "suggested_action": "Inspect the unexpected values in the evidence. Correct formatting errors, or split the column if it intentionally mixes different kinds of values. Do not convert the column automatically; that would hide the inconsistent records."
+    },
+    {
+      "rule_id": "outliers",
+      "issue_title": "Potential numerical outliers in column 'measurement'",
+      "severity": "info",
+      "scope": "column",
+      "column": "measurement",
+      "affected_records": 1,
+      "evidence": {
+        "method": "iqr",
+        "multiplier": 1.5,
+        "sample_size": 11,
+        "q1": 2.5,
+        "q3": 7.5,
+        "iqr": 5.0,
+        "lower_bound": -5.0,
+        "upper_bound": 15.0,
+        "outlier_count": 1,
+        "sample_values": [
+          {
+            "row": 10,
+            "value": "100",
+            "numeric_value": 100.0,
+            "distance_outside_fence": 85.0,
+            "truncated": false
+          }
+        ],
+        "sample_limit": 10,
+        "sample_truncated": false,
+        "note": "Values outside the fences are potential anomalies, not confirmed data errors."
+      },
+      "explanation": "1 numeric value in column 'measurement' falls strictly outside the Tukey fences [-5, 15] (Q1=2.5, Q3=7.5, IQR=5, multiplier=1.5). These are potential outliers, not confirmed data errors. A real extreme measurement can fall outside the fences, and the fences can also be tight when the interquartile range is small.",
+      "suggested_action": "Review the listed values in context. A statistical outlier can be a valid extreme measurement. Do not remove or winsorize these values unless you have a domain reason to treat them as errors."
+    },
+    {
+      "rule_id": "constant_columns",
+      "issue_title": "Constant column 'source'",
+      "severity": "warning",
+      "scope": "column",
+      "column": "source",
+      "affected_records": 11,
+      "evidence": {
+        "constant_value": "lab",
+        "value_truncated": false,
+        "non_missing_count": 11,
+        "missing_count": 0,
+        "unique_non_missing": 1
+      },
+      "explanation": "Column 'source' has a single distinct non-missing value ('lab'). 11 observed rows share it and 0 rows are missing. A constant column does not distinguish records. It can be intentional, for example after a filter, or a sign that the export filled one value.",
+      "suggested_action": "If the column is intentionally uniform, for example because a filter kept one site, you can ignore this finding. Otherwise it will not help distinguish records and may indicate a failed export."
+    },
+    {
+      "rule_id": "high_cardinality",
+      "issue_title": "High cardinality in column 'record_id'",
+      "severity": "info",
+      "scope": "column",
+      "column": "record_id",
+      "affected_records": 10,
+      "evidence": {
+        "unique_count": 10,
+        "non_missing_count": 11,
+        "distinct_ratio": 0.9090909090909091,
+        "threshold": 0.5,
+        "median_value_length": 2.0,
+        "categorical_max_length": 40,
+        "affected_records_meaning": "distinct non-missing values"
+      },
+      "explanation": "Column 'record_id' is categorical and has 10 distinct values out of 11 observed values (distinct-value ratio 0.91), which is at or above the threshold of 0.50. Affected records here means the number of distinct values, not a count of bad rows. This is an observation about cardinality: the column may be an identifier or another near-unique label, and that pattern is often legitimate and useful. It is not evidence that the values are incorrect. Small columns can cross the threshold with only a few distinct labels.",
+      "suggested_action": "Treat this as an observation about distinctness, not as a defect. The column may be an identifier or another near-unique label, which is often legitimate and useful. If it will be used as a category in a grouped analysis, plan for the number of distinct values."
+    }
+  ],
+  "finding_counts": {
+    "error": 2,
+    "warning": 4,
+    "info": 2,
+    "total": 8
+  },
+  "configuration": {
+    "missingness_threshold": 0.2,
+    "outlier_method": "iqr",
+    "outlier_multiplier": 1.5,
+    "outlier_min_samples": 4,
+    "high_cardinality_threshold": 0.5,
+    "categorical_max_length": 40,
+    "dominance_threshold": 0.8,
+    "enabled_checks": [
+      "missingness",
+      "duplicates",
+      "mixed_types",
+      "outliers",
+      "constant_columns",
+      "high_cardinality"
+    ],
+    "disabled_checks": [],
+    "missing_tokens": [
+      "#n/a",
+      "#na",
+      "<na>",
+      "n/a",
+      "nan",
+      "nat",
+      "none",
+      "null"
+    ]
+  },
+  "definitions": {
+    "duplicate_row": "An exact duplicate is a row that matches another row on every column. All missing representations match each other, including empty cells, configured missing tokens, JSON null, and a JSON key that is absent from one object. Non-missing values must also have the same Python type: true is not a duplicate of 1, and the string \"1\" is not a duplicate of the number 1. Text is compared exactly, so leading or trailing spaces are preserved. The duplicate-row count is the number of extra copies beyond the first occurrence of each duplicated row.",
+    "missing_value": "A value is missing when it is JSON null, an absent JSON key, a non-standard JSON NaN, an empty or whitespace-only cell, or a configured missing token such as null, none, nan, or n/a (matched without regard to case or surrounding space). The number 0, the boolean false, and the text \"0\" or \"false\" are not missing unless those exact tokens are added to the configuration. The bare token \"na\" is not missing by default because it can be a real code.",
+    "column_type": "Column types are inferred from non-missing values, not from a dataframe dtype. A value is boolean when it is a JSON boolean or one of the words true, false, yes, and no. A value is an integer when it is a JSON integer, or text made of an optional sign and digits, without a leading zero. A value is a float when it is a JSON float or text that contains a decimal point or an exponent. Datetime values must be unambiguous year-first dates, YYYY-MM-DD or YYYY/MM/DD, with an optional time. Day-month and month-day dates are left as text so a locale is never guessed. The dominant type is the compatible type that covers the most values. Integer values are compatible with float. When integer and float cover the same values, integer wins unless a float value is actually present. Other ties prefer boolean, then datetime, then integer, then float, then string. If the dominant type covers at least the dominance threshold, that type is accepted. Otherwise the column is mixed. One exception keeps a short-token column categorical when integer-like values appear together with text codes that contain both letters and digits and those codes use at least two different alphabetic patterns (the letters that remain after digits and signs are removed). The integer-like tokens are labels in that code set: they are not listed as unexpected, and the column is not given a numeric mean. This exception does not apply when an integer or float type already meets the dominance threshold, and it does not apply when every letter-and-digit code shares one alphabetic pattern. An accepted string column is categorical when its median character length is within the configured label length and no value contains a newline; otherwise it is free text. An all-missing column is unknown. Numeric summaries and outlier checks are produced only after a column is accepted as integer or float.",
+    "outlier": "Potential numerical outliers use the Tukey IQR rule. Q1 and Q3 are the 25th and 75th percentiles with the linear method: position (n - 1) * p on the sorted finite numeric values. The fences are Q1 - k * IQR and Q3 + k * IQR, where k is the configured multiplier (default 1.5). A value is listed only when it is strictly outside the fences. Only finite values compatible with an accepted integer or float column are included. Outliers are statistical candidates for review, not confirmed data errors.",
+    "constant_column": "A constant column has exactly one distinct non-missing value. Missing values do not count as that value. An all-missing column is not constant.",
+    "high_cardinality": "A categorical column is high cardinality when its distinct-value ratio (unique non-missing values divided by non-missing values) is greater than or equal to the configured threshold and the column has at least two distinct values. Constant columns are not flagged by this rule. Numeric identifiers stay numeric, so they are not flagged here; their unique counts are still reported. The finding records many distinct values. It is an observation about an identifier or another near-unique label, not a claim that the column is defective.",
+    "severity": "error: the column has no stable type, or at least 90% of its values are missing. warning: a quality issue is likely but may still be legitimate, such as duplicate rows, a constant field, moderate missingness, or a minority of values that do not match the dominant type. info: something to review that is not a confirmed error. Statistical outliers are potential anomalies. High cardinality is an observation that a column has many distinct values, often because it is an identifier.",
+    "row_number": "Row numbers in findings are 1-based positions in the loaded table. They do not count a CSV header. Completely blank CSV lines are not rows.",
+    "missingness_comparison": "A column is flagged when its missing fraction is strictly greater than missingness_threshold.",
+    "high_cardinality_comparison": "A categorical column is flagged when its distinct-value ratio is greater than or equal to high_cardinality_threshold.",
+    "outlier_comparison": "A numeric value is flagged when it is strictly outside the IQR fences.",
+    "checks": {
+      "missingness": "Flag a column when its missing-value fraction exceeds the configured threshold.",
+      "duplicates": "Flag the dataset when any exact duplicate rows are present.",
+      "mixed_types": "Flag a column that contains values incompatible with its dominant type.",
+      "outliers": "Flag potential numerical outliers using the IQR rule. These are not confirmed errors.",
+      "constant_columns": "Flag a column with only one distinct non-missing value.",
+      "high_cardinality": "Flag a categorical column whose distinct-value ratio meets the configured threshold."
+    }
+  }
+}

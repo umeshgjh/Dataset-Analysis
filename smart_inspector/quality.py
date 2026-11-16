@@ -49,9 +49,9 @@ _CONSTANT_ACTION = (
     "records and may indicate a failed export."
 )
 _CARDINALITY_ACTION = (
-    "Check whether this column is an identifier or a near-unique label rather than "
-    "a category. High-cardinality fields can inflate grouped analyses. If it is an "
-    "identifier, treat it as one and do not encode it as a categorical feature without a plan."
+    "Treat this as an observation about distinctness, not as a defect. The column may be "
+    "an identifier or another near-unique label, which is often legitimate and useful. "
+    "If it will be used as a category in a grouped analysis, plan for the number of distinct values."
 )
 
 
@@ -405,8 +405,9 @@ def _high_cardinality(
                     f"out of {observed} observed values (distinct-value ratio {ratio:.2f}), "
                     f"which is at or above the threshold of {config.high_cardinality_threshold:.2f}. "
                     "Affected records here means the number of distinct values, not a count of bad rows. "
-                    "A high ratio often means the column is an identifier or a near-unique label rather "
-                    "than a useful category. It is not evidence that the values are incorrect. "
+                    "This is an observation about cardinality: the column may be an identifier or "
+                    "another near-unique label, and that pattern is often legitimate and useful. "
+                    "It is not evidence that the values are incorrect. "
                     "Small columns can cross the threshold with only a few distinct labels."
                 ),
                 suggested_action=_CARDINALITY_ACTION,

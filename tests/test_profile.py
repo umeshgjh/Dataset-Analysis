@@ -152,6 +152,81 @@ def test_iso_timestamp_with_z_is_datetime(inspect_file) -> None:
     assert column(report, "when")["inferred_type"] == "datetime"
 
 
+def test_mixed_integer_and_letter_digit_codes_are_categorical(inspect_file) -> None:
+    report = inspect_file(
+        "codes.csv",
+        "group_code\n1\n2\n3\nmm2\n-42m\nA1\n",
+    )
+    profile = column(report, "group_code")
+    assert profile["inferred_type"] == "categorical"
+    assert profile["dominant_type"] == "integer"
+    assert profile["unexpected_count"] == 0
+    assert profile["numeric_summary"] is None
+    assert profile["type_counts"]["integer"] == 3
+    assert profile["type_counts"]["string"] == 3
+    summary = profile["categorical_summary"]
+    assert summary["unique_count"] == 6
+    assert "short codes rather than measurements" in profile["classification_note"]
+    assert "categorical rather than mixed" in profile["classification_note"]
+    assert findings(report, "mixed_types") == []
+    assert findings(report, "outliers") == []
+
+    native = inspect_file(
+        "codes.json",
+        '[{"group_code": 1}, {"group_code": 2}, {"group_code": "mm2"}, {"group_code": "-42m"}]',
+    )
+    native_profile = column(native, "group_code")
+    assert native_profile["inferred_type"] == "categorical"
+    assert native_profile["unexpected_count"] == 0
+    assert native_profile["numeric_summary"] is None
+
+
+def test_one_alphabetic_pattern_stays_mixed(inspect_file) -> None:
+    report = inspect_file(
+        "series.csv",
+        "value\n1\n2\n3\nbad0\nbad1\n",
+    )
+    profile = column(report, "value")
+    assert profile["inferred_type"] == "mixed"
+    assert profile["dominant_type"] == "integer"
+    assert profile["numeric_summary"] is None
+    assert profile["unexpected_count"] == 2
+    assert findings(report, "mixed_types", "value")[0]["severity"] == "error"
+
+
+def test_accepted_numeric_column_keeps_stray_code_tokens(inspect_file) -> None:
+    rows = ["1", "2", "3", "4", "5", "6", "7", "8", "mm2", "-42m"]
+    report = inspect_file("measures.csv", "value\n" + "\n".join(rows) + "\n")
+    profile = column(report, "value")
+    assert profile["inferred_type"] == "integer"
+    assert profile["unexpected_count"] == 2
+    assert profile["numeric_summary"]["count"] == 8
+    assert profile["numeric_summary"]["mean"] == 4.5
+    assert findings(report, "mixed_types", "value")[0]["severity"] == "warning"
+
+
+def test_decimal_measurements_are_not_reclassified_as_codes(inspect_file) -> None:
+    report = inspect_file(
+        "decimals.csv",
+        "value\n1.5\n2.5\n3.5\nmm2\n-42m\n",
+    )
+    profile = column(report, "value")
+    assert profile["inferred_type"] == "mixed"
+    assert profile["dominant_type"] == "float"
+    assert profile["numeric_summary"] is None
+
+
+def test_text_majority_code_column_does_not_flag_integer_labels(inspect_file) -> None:
+    rows = ["mm2", "mm2", "mm2", "mm2", "-42m", "-42m", "-42m", "-42m", "1", "2"]
+    report = inspect_file("labels.csv", "group_code\n" + "\n".join(rows) + "\n")
+    profile = column(report, "group_code")
+    assert profile["inferred_type"] == "categorical"
+    assert profile["dominant_type"] == "string"
+    assert profile["unexpected_count"] == 0
+    assert profile["categorical_summary"]["most_frequent_value"] == "mm2"
+    assert findings(report, "mixed_types") == []
+
+
 def test_underscore_numbers_stay_text(inspect_file) -> None:
     report = inspect_file("codes.csv", "code\n1_000\n2_000\n")
     assert column(report, "code")["inferred_type"] == "categorical"

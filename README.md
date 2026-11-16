@@ -26,7 +26,7 @@ It does not clean the data, assign an overall quality score, or treat a statisti
 | `.csv` | UTF-8 text, comma delimiter, one header row, one record per row. A leading byte-order mark is accepted. |
 | `.json` | One top-level array of flat objects. Each object is a row. Keys are column names. |
 
-A value may be a string, a finite number, a boolean, or null. Nested objects, nested arrays, and JSON Lines are rejected with an error that names the row and field. The format is chosen from the file extension, not by guessing the contents.
+A value may be a string, a finite number, a boolean, or null. A nested object or nested array inside a row is rejected with an error that names the row and field. A top-level object, a non-object row, and JSON Lines are also rejected, and the message says what was found. The format is chosen from the file extension, not by guessing the contents.
 
 Other limits are listed under [Assumptions](#assumptions) and [Known limitations](#known-limitations).
 
@@ -103,6 +103,57 @@ Ordinary failures print `Error: ...` on stderr. Add `--debug` to include a trace
 | info | high_cardinality | `record_id` | 10 distinct ids out of 11 rows. |
 
 `examples/research_data.json` is the JSON counterpart: native numbers and booleans, a JSON null, a key omitted on one row, a real zero, and one duplicated object.
+
+## Quality checks
+
+Each finding has a rule id, title, severity, column or dataset scope, an affected-record count when that count has a clear meaning, evidence, an explanation, and a suggested action. Severities separate definite structural problems from things that only need review.
+
+| Rule | Severity | What is flagged |
+| --- | --- | --- |
+| `missingness` | warning, or error at 90% or more | Missing fraction strictly greater than `missingness_threshold`. |
+| `duplicates` | warning | One or more extra exact copies. This does not prove the rows are wrong. |
+| `mixed_types` | error when the column is `mixed`; warning when a type was accepted but some values do not fit | Values that disagree with the dominant kind. They are not coerced. |
+| `outliers` | info | Numeric values strictly outside the Tukey fences. The finding calls them potential outliers, not confirmed errors. |
+| `constant_columns` | warning | Exactly one distinct non-missing value. An all-missing column is not constant. |
+| `high_cardinality` | info | A categorical column whose distinct-value ratio is at least `high_cardinality_threshold`, with at least two distinct values. The affected-record count is the number of distinct values. This is an observation about an identifier or another near-unique label, not a claim that the values are wrong. |
+
+## Demonstration data
+
+| File | Role |
+| --- | --- |
+| `datasets/materials_piezoelectric_properties.csv` | Unchanged copy of the assignment CSV (3,322 rows, 15 columns). |
+| `examples/lab_observations.json` | Compliant flat JSON: eight generic lab rows and no quality findings. |
+| `examples/corrupted_observations.csv` | Synthetic table that triggers all six checks. `group_code` uses values such as `1`, `2`, `mm2`, and `-42m` and is classified as categorical. |
+| `examples/nested_document.json` | Tiny synthetic root object. It is not the assignment file. It produces the same class of rejection. |
+| `examples/research_data.csv` | Smaller synthetic table used by the first examples above. |
+
+The assignment structure file, `materials_piezoelectric_structures.json`, is a 22 MB top-level object and is not stored in this repository. Inspecting it exits with status 1 and prints:
+
+```text
+Error: Unsupported JSON structure: the root value is an object. Provide a top-level array of flat objects. Nested documents and JSON Lines are not supported.
+```
+
+```bash
+python inspector.py inspect datasets/materials_piezoelectric_properties.csv --output-dir reports
+python inspector.py inspect examples/lab_observations.json --output-dir reports
+python inspector.py inspect examples/corrupted_observations.csv --output-dir reports
+python inspector.py inspect examples/nested_document.json --output-dir reports
+```
+
+The first three commands write these reports:
+
+- `reports/materials_piezoelectric_properties.csv.inspection.md`
+- `reports/materials_piezoelectric_properties.csv.inspection.json`
+- `reports/lab_observations.json.inspection.md`
+- `reports/lab_observations.json.inspection.json`
+- `reports/corrupted_observations.csv.inspection.md`
+- `reports/corrupted_observations.csv.inspection.json`
+
+On the assignment CSV the tool reports 3,322 rows, 15 columns, and 0 extra duplicate rows. `point_group` is categorical (21 labels, mode `mm2`). Empty cells are the only missing values: 6 in `band_gap`, `is_metal`, `formation_energy_per_atom`, and `energy_above_hull`, and 5 in `is_stable` and `theoretical`. The 10 findings are all `info`: IQR outliers on the numeric columns, plus high cardinality for `material_id` and `formula_pretty`.
+
+`examples/corrupted_observations.csv` reports 12 rows, 1 extra duplicate row, and 7 findings covering all six rules: missing `notes` (6 of 12 values, warning), duplicate rows (warning), mixed `batch` (error) and `score` (warning), an info outlier on `measurement`, constant `site`, and high-cardinality `sample_id`. `group_code` is categorical and is not flagged as mixed.
+
+The nested-document command exits with status 1 and does not write a report.
 
 ## Python API
 
@@ -212,7 +263,7 @@ Severities:
 
 - `error`: the column has no stable type, or at least 90% of its values are missing.
 - `warning`: a likely quality issue that can still be legitimate, such as duplicates, a constant field, moderate missingness, or a minority of mismatched values.
-- `info`: a potential anomaly. Outliers and high-cardinality categories use this severity because they are not evidence that a value is wrong.
+- `info`: something to review that is not a confirmed error. Outliers are potential anomalies. High cardinality means the column has many distinct values, often because it is an identifier or another useful near-unique label.
 
 There is no overall quality score.
 
@@ -237,9 +288,11 @@ smart_inspector/
     ├── markdown.py
     └── json_report.py
 inspector.py             CLI entry point
-tests/                   synthetic pytest fixtures
+tests/                   pytest fixtures, including the example and assignment files
 examples/                small demo files
-reports/                 default output directory
+datasets/                unchanged assignment CSV
+reports/                 inspection reports
+docs/                    reflection, demo script, and submission checklist
 ```
 
 `values.py`, `exceptions.py`, `cli.py`, `definitions.py`, and `version.py` are extra modules so that one rule is not copied into the loader, the profiler, and the checks. Pandas holds the aligned table as object columns and supplies its shape. It is not used to decide types or duplicates: pandas would treat `True` as equal to `1`, and its dtypes would hide the text that failed to parse. NumPy computes means and linear percentiles. After the table is built, a check refuses to continue if any cell's Python type changed.
@@ -255,8 +308,9 @@ reports/                 default output directory
 - Integers do not have leading zeros, so `007` stays text. Floats use a decimal point or an exponent, such as `1.5` or `1.5e1`.
 - Dates must be year-first: `YYYY-MM-DD` or `YYYY/MM/DD`, with an optional time and timezone. Month and day must be two digits. `01/02/2024` is text, because the tool does not choose a locale. A column of only years, such as `2024`, is an integer.
 - The dominant type is the compatible kind that covers the most non-missing values. Integers are compatible with float. Ties prefer boolean, then datetime, then integer, then float, then string, which keeps an all-integer column from being called float.
-- If that coverage is at least the dominance threshold, the type is accepted and the other values are listed as unexpected. Otherwise the column is `mixed`. An all-missing column is `unknown`.
+- If that coverage is at least the dominance threshold, the type is accepted and the other values are listed as unexpected. Otherwise the column is `mixed`, apart from the short-code exception below. An all-missing column is `unknown`.
 - Text is categorical when the median stripped length is at most `categorical_max_length` and no value contains a newline. Longer text is `string`.
+- A short-token column is also categorical when it mixes integer-like tokens with letter-and-digit codes that use at least two alphabetic patterns. The pattern is the letters left after digits and signs are removed, so `mm2` and `-42m` are different patterns, while `bad0` and `bad1` are the same pattern and stay on the mixed or numeric path. Integer-like tokens in an accepted code column are labels: they are not unexpected values and they do not get a mean. The exception does not run when integer or float coverage already meets the dominance threshold, or when any value is a float, boolean, date, has whitespace, or is longer than the label limit.
 - Unique counts and duplicate comparisons use the stored value. `"1"` and `" 1"` are different text, while both still parse as the integer 1 in a numeric summary. Categories are not case-folded.
 - An exact duplicate matches on every column. All missing representations match each other. `true` is not a duplicate of `1`, and the string `"1"` is not a duplicate of the number `1`. The reported duplicate count is the number of extra copies after the first occurrence.
 - Numeric min, max, and mean, and the IQR check, run only after a column is accepted as integer or float. Unexpected non-numeric cells are excluded and counted. Mixed columns do not get a mean.
@@ -269,7 +323,8 @@ reports/                 default output directory
 - Only comma-separated CSV and a single JSON array are supported. Semicolon CSV, Excel, Parquet, and JSON Lines are out of scope.
 - Datetimes are limited to the unambiguous year-first forms above. A single datetime column may still mix `2024-01-01` and `2024-01-01T00:00:00`; that is reported in the classification note, not as a seventh quality rule.
 - High cardinality applies to categorical text, not to numeric identifiers. Unique counts for numeric columns are still in the column profile.
-- A short unique column can be classified as categorical and then flagged as high cardinality. That is intentional for ids such as `record_id`. Free text whose median length is above 40 characters is `string` and is not flagged by that rule.
+- A short unique column can be classified as categorical and then flagged as high cardinality. That is intentional for ids such as `record_id` and `material_id`. Free text whose median length is above 40 characters is `string` and is not flagged by that rule.
+- Code columns are recognized only in the situation described above. A numeric column that still meets the dominance threshold keeps its numeric type, even if a few cells look like codes. Letter-and-digit tokens that all share one alphabetic pattern are not rewritten into a category. A code column that also contains a decimal, a date, or a boolean stays on the ordinary mixed or numeric path.
 - Constant columns are not also flagged as high cardinality.
 - Integers that do not fit in a finite float still report an exact minimum and maximum. The mean and the outlier check are skipped, and the report says why.
 - Samples of unexpected values and outliers are capped at 10, and embedded text is capped at 200 characters. Counts in the evidence are complete.
@@ -284,14 +339,19 @@ With the virtual environment activated, from the repository root:
 pytest
 python inspector.py inspect examples/research_data.csv --output-dir reports
 python inspector.py inspect examples/research_data.json --config examples/config.json --output-dir reports
+python inspector.py inspect datasets/materials_piezoelectric_properties.csv --output-dir reports
+python inspector.py inspect examples/lab_observations.json --output-dir reports
+python inspector.py inspect examples/corrupted_observations.csv --output-dir reports
 python - << 'PY'
 from smart_inspector import DataInspector
 report = DataInspector("examples/research_data.csv").inspect()
 print(report)
 assert report.to_dict()["overview"]["row_count"] == 11
+report.to_markdown("reports/research_data.csv.inspection.md")
+report.to_json("reports/research_data.csv.inspection.json")
 PY
 ```
 
-`pytest` uses synthetic files created in the tests. It does not download data. The suite covers CSV and JSON parsing, missing values, type inference, numeric and categorical summaries, duplicate detection, all six quality checks, Markdown and JSON output, invalid paths, empty inputs, nested JSON, and configuration validation.
+`pytest` does not download data. It covers CSV and JSON parsing, missing values, type inference, numeric and categorical summaries, duplicate detection, all six quality checks, Markdown and JSON output, invalid paths, empty inputs, nested JSON, configuration validation, the demonstration files, and the assignment CSV. The reflection, demonstration script, and submission checklist are in `docs/reflection.md`, `docs/demo-script.md`, and `docs/submission-checklist.md`.
 
 A successful CSV inspection prints a short summary and writes both report files. The process exit code is 0.
