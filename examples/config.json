@@ -1,0 +1,27 @@
+{
+  "missingness_threshold": 0.2,
+  "outlier_method": "iqr",
+  "outlier_multiplier": 1.5,
+  "outlier_min_samples": 4,
+  "high_cardinality_threshold": 0.5,
+  "categorical_max_length": 40,
+  "dominance_threshold": 0.8,
+  "enabled_checks": [
+    "missingness",
+    "duplicates",
+    "mixed_types",
+    "outliers",
+    "constant_columns",
+    "high_cardinality"
+  ],
+  "missing_tokens": [
+    "#n/a",
+    "#na",
+    "<na>",
+    "n/a",
+    "nan",
+    "nat",
+    "none",
+    "null"
+  ]
+}

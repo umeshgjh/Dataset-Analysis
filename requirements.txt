@@ -1,0 +1,7 @@
+# Runtime dependencies for the Smart Data Inspector.
+# Python 3.11 or newer is required.
+pandas>=2.2.0
+numpy>=1.26.0
+
+# Test runner used by the verification instructions.
+pytest>=8.0.0

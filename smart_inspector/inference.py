@@ -1,0 +1,348 @@
+"""Column type inference that does not rewrite the source values.
+
+A column receives a type only when one compatible kind covers at least the
+dominance threshold. Anything else is ``mixed``, and the values that do not
+fit are returned for the report. String columns are then split into short
+categorical labels and free text.
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+from dataclasses import dataclass
+from typing import Any
+
+import numpy as np
+
+from smart_inspector.config import InspectionConfig
+from smart_inspector.values import (
+    DOMINANT_PRIORITY,
+    KIND_ORDER,
+    REPORT_TEXT_LIMIT,
+    SAMPLE_LIMIT,
+    clip_text,
+    compatible,
+    datetime_pattern,
+    display_value,
+    is_missing,
+    missing_label,
+    parse_numeric,
+    value_identity,
+    value_kind,
+)
+
+
+@dataclass
+class InferenceResult:
+    """Type decision and the numeric values that may be summarized."""
+
+    inferred_type: str
+    dominant_type: str
+    missing_count: int
+    missing_fraction: float
+    missing_percentage: float
+    missing_token_counts: dict[str, int]
+    non_missing_count: int
+    unique_non_missing: int
+    type_counts: dict[str, int]
+    unexpected_count: int
+    unexpected_distinct_count: int
+    unexpected_values: list[dict[str, Any]]
+    classification_note: str
+    numeric_values: list[int | float]
+    numeric_rows: list[int]
+    numeric_raw: list[Any]
+    median_length: float | None
+
+
+def infer_column(values: list[Any], config: InspectionConfig) -> InferenceResult:
+    """Infer a type for one column without modifying ``values``."""
+    tokens = set(config.missing_tokens)
+    row_count = len(values)
+    token_counts: Counter[str] = Counter()
+    observed: list[tuple[int, Any, str]] = []
+    for row_number, value in enumerate(values, start=1):
+        if is_missing(value, tokens):
+            token_counts[missing_label(value)] += 1
+            continue
+        kind = value_kind(value)
+        if kind is None:
+            token_counts[missing_label(value)] += 1
+            continue
+        observed.append((row_number, value, kind))
+
+    missing_count = row_count - len(observed)
+    fraction = (missing_count / row_count) if row_count else 0.0
+    type_counts = {kind: 0 for kind in KIND_ORDER}
+    for _row, _value, kind in observed:
+        type_counts[kind] += 1
+    unique_non_missing = len({value_identity(value, tokens) for _row, value, _kind in observed})
+    token_map = dict(sorted(token_counts.items()))
+
+    if not observed:
+        return InferenceResult(
+            inferred_type="unknown",
+            dominant_type="unknown",
+            missing_count=missing_count,
+            missing_fraction=fraction,
+            missing_percentage=fraction * 100.0,
+            missing_token_counts=token_map,
+            non_missing_count=0,
+            unique_non_missing=0,
+            type_counts=type_counts,
+            unexpected_count=0,
+            unexpected_distinct_count=0,
+            unexpected_values=[],
+            classification_note="Every value is missing, so the column type is unknown.",
+            numeric_values=[],
+            numeric_rows=[],
+            numeric_raw=[],
+            median_length=None,
+        )
+
+    kinds = [kind for _row, _value, kind in observed]
+    dominant = _choose_dominant(kinds)
+    covered = sum(1 for kind in kinds if compatible(dominant, kind))
+    unexpected_rows = [
+        (row_number, value, kind)
+        for row_number, value, kind in observed
+        if not compatible(dominant, kind)
+    ]
+    unexpected_values, unexpected_count, unexpected_distinct_count = _unexpected_samples(
+        unexpected_rows
+    )
+    coverage = covered / len(observed)
+    accepted = coverage + 0.0 >= config.dominance_threshold
+
+    median_length: float | None = None
+    multiline = False
+    format_note = ""
+    if accepted and dominant == "string":
+        inferred, median_length, multiline = _classify_text(observed, config)
+    elif accepted:
+        inferred = dominant
+        if dominant == "datetime":
+            format_note = _datetime_format_note(observed)
+    else:
+        inferred = "mixed"
+
+    note = _classification_note(
+        inferred=inferred,
+        dominant=dominant,
+        covered=covered,
+        non_missing=len(observed),
+        threshold=config.dominance_threshold,
+        type_counts=type_counts,
+        unexpected_count=unexpected_count,
+        median_length=median_length,
+        max_length=config.categorical_max_length,
+        multiline=multiline,
+        format_note=format_note,
+    )
+    numeric_values: list[int | float] = []
+    numeric_rows: list[int] = []
+    numeric_raw: list[Any] = []
+    if inferred in {"integer", "float"}:
+        for row_number, value, kind in observed:
+            if not compatible(dominant, kind):
+                continue
+            parsed = parse_numeric(value)
+            if parsed is None:
+                continue
+            numeric_values.append(parsed)
+            numeric_rows.append(row_number)
+            numeric_raw.append(value)
+
+    return InferenceResult(
+        inferred_type=inferred,
+        dominant_type=dominant,
+        missing_count=missing_count,
+        missing_fraction=fraction,
+        missing_percentage=fraction * 100.0,
+        missing_token_counts=token_map,
+        non_missing_count=len(observed),
+        unique_non_missing=unique_non_missing,
+        type_counts=type_counts,
+        unexpected_count=unexpected_count,
+        unexpected_distinct_count=unexpected_distinct_count,
+        unexpected_values=unexpected_values,
+        classification_note=note,
+        numeric_values=numeric_values,
+        numeric_rows=numeric_rows,
+        numeric_raw=numeric_raw,
+        median_length=median_length,
+    )
+
+
+def _choose_dominant(kinds: list[str]) -> str:
+    """Pick the compatible type with the widest coverage.
+
+    On a tie, the earlier entry in ``DOMINANT_PRIORITY`` wins. Float coverage
+    includes integers, so a float wins that tie only when its coverage is
+    strictly larger, which happens when a non-integral float is present.
+    """
+    best = "string"
+    best_coverage = -1
+    for candidate in DOMINANT_PRIORITY:
+        coverage = sum(1 for kind in kinds if compatible(candidate, kind))
+        if coverage > best_coverage:
+            best = candidate
+            best_coverage = coverage
+    return best
+
+
+def _unexpected_samples(
+    rows: list[tuple[int, Any, str]],
+) -> tuple[list[dict[str, Any]], int, int]:
+    grouped: dict[tuple[Any, ...], dict[str, Any]] = {}
+    total = 0
+    for row_number, value, kind in rows:
+        total += 1
+        identity = _unexpected_identity(value, kind)
+        if identity not in grouped:
+            shown, truncated = clip_text(display_value(value), REPORT_TEXT_LIMIT)
+            grouped[identity] = {
+                "value": shown,
+                "kind": kind,
+                "count": 0,
+                "first_row": row_number,
+                "truncated": truncated,
+            }
+        grouped[identity]["count"] += 1
+    ordered = sorted(
+        grouped.values(),
+        key=lambda item: (-int(item["count"]), int(item["first_row"]), str(item["value"])),
+    )
+    return ordered[:SAMPLE_LIMIT], total, len(grouped)
+
+
+def _unexpected_identity(value: Any, kind: str) -> tuple[Any, ...]:
+    """Group unexpected cells without treating ``True`` as ``1`` or ``"1"``."""
+    if isinstance(value, str):
+        return ("str", kind, value)
+    if isinstance(value, bool):
+        return ("bool", value)
+    if isinstance(value, int):
+        return ("int", value)
+    if isinstance(value, float):
+        return ("float", value)
+    return ("other", kind, display_value(value))
+
+
+def _classify_text(
+    observed: list[tuple[int, Any, str]],
+    config: InspectionConfig,
+) -> tuple[str, float, bool]:
+    lengths: list[int] = []
+    multiline = False
+    for _row, value, kind in observed:
+        if kind != "string" or not isinstance(value, str):
+            continue
+        if "\n" in value or "\r" in value:
+            multiline = True
+        lengths.append(len(value.strip()))
+    if not lengths:
+        return "string", 0.0, multiline
+    median_length = float(np.median(np.asarray(lengths, dtype=float)))
+    if multiline or median_length > config.categorical_max_length:
+        return "string", median_length, multiline
+    return "categorical", median_length, multiline
+
+
+def _datetime_format_note(observed: list[tuple[int, Any, str]]) -> str:
+    counts: dict[str, int] = {}
+    for _row, value, kind in observed:
+        if kind != "datetime" or not isinstance(value, str):
+            continue
+        label = datetime_pattern(value)
+        counts[label] = counts.get(label, 0) + 1
+    if len(counts) < 2:
+        return ""
+    listed = ", ".join(f"{name} ({count})" for name, count in counts.items())
+    return f"More than one datetime format is present: {listed}."
+
+
+def _classification_note(
+    *,
+    inferred: str,
+    dominant: str,
+    covered: int,
+    non_missing: int,
+    threshold: float,
+    type_counts: dict[str, int],
+    unexpected_count: int,
+    median_length: float | None,
+    max_length: int,
+    multiline: bool,
+    format_note: str,
+) -> str:
+    percent = 100.0 * covered / non_missing
+    if inferred == "mixed":
+        return (
+            f"Classified as mixed because the dominant type {dominant} covers "
+            f"{covered} of {non_missing} non-missing values ({percent:.2f}%), "
+            f"below the dominance threshold of {threshold:.0%}. "
+            "Unexpected values are listed separately. Numeric summaries are omitted "
+            "for mixed columns so a mean is not reported for an unstable type."
+        )
+
+    if unexpected_count == 0 and dominant == "integer":
+        lead = "Accepted as integer because every non-missing value is an integer."
+    elif unexpected_count == 0 and dominant == "float":
+        if type_counts["integer"]:
+            lead = (
+                "Accepted as float because every non-missing value is numeric "
+                "and at least one is a float."
+            )
+        else:
+            lead = "Accepted as float because every non-missing value is a float."
+    elif unexpected_count == 0 and dominant == "boolean":
+        lead = (
+            "Accepted as boolean because every non-missing value is a JSON boolean "
+            "or one of true, false, yes, and no."
+        )
+    elif unexpected_count == 0 and dominant == "datetime":
+        lead = (
+            "Accepted as datetime because every non-missing value matches an "
+            "unambiguous year-first date or timestamp."
+        )
+    elif unexpected_count == 0 and dominant == "string":
+        lead = "Accepted as string because every non-missing value is text."
+    else:
+        lead = (
+            f"Accepted as {dominant} because that type covers {covered} of "
+            f"{non_missing} non-missing values ({percent:.2f}%), which meets "
+            f"the dominance threshold of {threshold:.0%}."
+        )
+
+    sentences = [lead]
+    if inferred == "categorical" and median_length is not None:
+        sentences.append(
+            "Classified as categorical because the values are short labels "
+            f"(median length {median_length:.1f} characters, limit {max_length}) "
+            "and none contain a newline."
+        )
+    elif inferred == "string" and median_length is not None:
+        if multiline:
+            sentences.append(
+                "Classified as free text rather than categorical because at least "
+                "one value contains a newline."
+            )
+        else:
+            sentences.append(
+                "Classified as free text rather than categorical because the median "
+                f"value length is {median_length:.1f} characters, above the label "
+                f"limit of {max_length}."
+            )
+    if unexpected_count == 1:
+        sentences.append(
+            f"1 non-missing value does not match {dominant} and is reported as unexpected."
+        )
+    elif unexpected_count:
+        sentences.append(
+            f"{unexpected_count} non-missing values do not match {dominant} "
+            "and are reported as unexpected."
+        )
+    if format_note:
+        sentences.append(format_note)
+    return " ".join(sentences)

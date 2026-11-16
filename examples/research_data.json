@@ -1,0 +1,29 @@
+[
+  {
+    "record_id": "R1",
+    "measurement": 1,
+    "enrolled": true,
+    "retries": 0,
+    "note": "ok"
+  },
+  {
+    "record_id": "R2",
+    "measurement": 2,
+    "enrolled": false,
+    "retries": 1
+  },
+  {
+    "record_id": "R3",
+    "measurement": 100,
+    "enrolled": true,
+    "retries": 0,
+    "note": null
+  },
+  {
+    "record_id": "R1",
+    "measurement": 1,
+    "enrolled": true,
+    "retries": 0,
+    "note": "ok"
+  }
+]
