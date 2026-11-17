@@ -7,13 +7,19 @@ in ``smart_inspector``.
 
 from __future__ import annotations
 
+import fcntl
 import html
 import json
+import os
+import re
+import secrets
 import subprocess
 import sys
 import tempfile
+import time
 import traceback
 from argparse import Namespace
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -34,6 +40,12 @@ from smart_inspector.models import InspectionReport
 ROOT = Path(__file__).resolve().parent
 PROJECT_FOLDERS = ("datasets", "examples")
 DATASET_SUFFIXES = {".csv": "csv", ".json": "json"}
+UPLOAD_DIR_PREFIX = "sdi-upload-"
+UPLOAD_MARKER_NAME = ".sdi-upload"
+UPLOAD_MARKER_TEXT = b"smart-data-inspector\n"
+UPLOAD_LEASE_NAME = ".sdi-lease"
+STALE_UPLOAD_SECONDS = 24 * 60 * 60
+_SESSION_ID = re.compile(r"\A[0-9a-f]{32}\Z")
 
 CHECK_LABELS = {
     "missingness": "Missingness",
@@ -205,14 +217,67 @@ def entry_by_key(entries: list[CatalogEntry], key: str | None) -> CatalogEntry |
     return None
 
 
-def store_upload(name: str, data: bytes) -> Path:
+def require_dataset_name(name: str) -> None:
+    """Refuse an upload whose name is not a CSV or JSON file.
+
+    The extension is detected from the file name. The inspection engine still
+    validates the contents of an accepted file.
+    """
+    suffix = Path(Path(name).name).suffix.lower()
+    if suffix in DATASET_SUFFIXES:
+        return
+    shown = suffix or "(none)"
+    raise InspectionError(
+        f"Unsupported file extension '{shown}'. "
+        "Upload a .csv or .json file. The format is detected from the file name."
+    )
+
+
+def new_session_id() -> str:
+    """Return an id that can be stored in an upload lease."""
+    return secrets.token_hex(16)
+
+
+def _valid_session_id(value: str) -> bool:
+    return bool(_SESSION_ID.fullmatch(value))
+
+
+def _lease_text(session_id: str) -> bytes:
+    if not _valid_session_id(session_id):
+        raise InspectionError("Upload session id is not valid.")
+    return f"{session_id}\n".encode("ascii")
+
+
+def write_upload_lease(directory: Path, session_id: str) -> None:
+    """Record or refresh a session lease without following a symlink."""
+    payload = _lease_text(session_id)
+    lease = directory / UPLOAD_LEASE_NAME
+    if lease.is_symlink():
+        raise InspectionError("Upload lease is not a regular file.")
+    fd = os.open(lease, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        os.ftruncate(fd, 0)
+        os.lseek(fd, 0, os.SEEK_SET)
+        os.write(fd, payload)
+        os.fsync(fd)
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
+def store_upload(name: str, data: bytes, session_id: str | None = None) -> Path:
     """Copy an upload to a temporary directory. The repository is not touched."""
+    require_dataset_name(name)
     base = Path(name).name
     if base in {"", ".", ".."}:
-        base = "upload"
-    directory = Path(tempfile.mkdtemp(prefix="sdi-upload-"))
+        base = "upload.csv"
+    directory = Path(tempfile.mkdtemp(prefix=UPLOAD_DIR_PREFIX))
+    (directory / UPLOAD_MARKER_NAME).write_bytes(UPLOAD_MARKER_TEXT)
     path = directory / base
     path.write_bytes(data)
+    owner = session_id if session_id and _valid_session_id(session_id) else new_session_id()
+    write_upload_lease(directory, owner)
     return path
 
 
@@ -241,11 +306,205 @@ def discard_upload(path: Path, root: Path) -> None:
         )
     resolved.unlink(missing_ok=True)
     parent = resolved.parent
-    if parent.name.startswith("sdi-upload-"):
+    if not parent.name.startswith(UPLOAD_DIR_PREFIX):
+        return
+    for name in (UPLOAD_MARKER_NAME, UPLOAD_LEASE_NAME):
+        extra = parent / name
         try:
-            parent.rmdir()
+            if extra.is_symlink() or not extra.is_file():
+                continue
+            extra.unlink()
         except OSError:
             return
+    try:
+        parent.rmdir()
+    except OSError:
+        return
+
+
+def _owned_upload_directory(directory: Path, temp_root: Path, project_root: Path) -> bool:
+    """True when a directory is one this application created for an upload."""
+    try:
+        if directory.is_symlink() or not directory.is_dir():
+            return False
+        if not directory.name.startswith(UPLOAD_DIR_PREFIX):
+            return False
+        if directory.name == UPLOAD_DIR_PREFIX:
+            return False
+        resolved = directory.resolve()
+        if resolved.parent != temp_root.resolve():
+            return False
+        project = project_root.resolve()
+        if resolved == project or project in resolved.parents:
+            return False
+        marker = directory / UPLOAD_MARKER_NAME
+        if marker.is_symlink() or not marker.is_file():
+            return False
+        return marker.read_bytes() == UPLOAD_MARKER_TEXT
+    except OSError:
+        return False
+
+
+def _lease_is_current(fd: int, now: float, max_age_seconds: float) -> bool:
+    """True when an open lease belongs to a session that has checked in recently."""
+    os.lseek(fd, 0, os.SEEK_SET)
+    content = os.read(fd, 64)
+    if not content.endswith(b"\n"):
+        return False
+    session_id = content[:-1].decode("ascii", errors="replace")
+    if not _valid_session_id(session_id):
+        return False
+    modified = os.fstat(fd).st_mtime
+    return now - modified < max_age_seconds
+
+
+def _expired_lease_is_locked(directory: Path, now: float, max_age_seconds: float) -> int | None:
+    """Lock a stale lease and return its descriptor. ``None`` means it is active.
+
+    A missing lease is not locked. The caller then uses the directory age.
+    A symlink is left untouched by returning ``None`` after the caller checks it.
+    """
+    lease = directory / UPLOAD_LEASE_NAME
+    try:
+        if lease.is_symlink():
+            return None
+        if not lease.exists():
+            return None
+        fd = os.open(lease, os.O_RDWR | os.O_NOFOLLOW)
+    except OSError:
+        return None
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+    except OSError:
+        os.close(fd)
+        return None
+    try:
+        if _lease_is_current(fd, now, max_age_seconds):
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+            return None
+    except OSError:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+        return None
+    return fd
+
+
+def refresh_upload_leases(
+    paths: Iterable[Path],
+    session_id: str,
+    *,
+    temp_root: Path,
+    project_root: Path,
+) -> None:
+    """Heartbeat every upload directory this session still has open."""
+    if not _valid_session_id(session_id):
+        return
+    for path in paths:
+        directory = path.parent
+        try:
+            if _owned_upload_directory(directory, temp_root, project_root):
+                write_upload_lease(directory, session_id)
+        except OSError:
+            continue
+
+
+def _directory_is_active(directory: Path, active_paths: Iterable[Path]) -> bool:
+    try:
+        resolved = directory.resolve()
+    except OSError:
+        return True
+    for active in active_paths:
+        try:
+            candidate = active.resolve()
+        except OSError:
+            candidate = active
+        if candidate == resolved or resolved in candidate.parents:
+            return True
+    return False
+
+
+def _remove_owned_directory(directory: Path) -> bool:
+    """Remove a flat upload directory. Leave anything with nested entries."""
+    try:
+        entries = list(directory.iterdir())
+    except OSError:
+        return False
+    files: list[Path] = []
+    for entry in entries:
+        try:
+            if entry.is_symlink() or not entry.is_file():
+                return False
+        except OSError:
+            return False
+        files.append(entry)
+    for entry in files:
+        try:
+            entry.unlink()
+        except OSError:
+            return False
+    try:
+        directory.rmdir()
+    except OSError:
+        return False
+    return True
+
+
+def cleanup_stale_uploads(
+    temp_root: Path,
+    *,
+    now: float,
+    max_age_seconds: float = STALE_UPLOAD_SECONDS,
+    active_paths: Iterable[Path] = (),
+    project_root: Path = ROOT,
+) -> list[Path]:
+    """Delete abandoned upload directories owned by this application.
+
+    A directory is removed only when it is a direct child of ``temp_root``,
+    carries the application marker, is outside the project, and has no current
+    session lease. A fresh lease keeps the directory at any age. A missing
+    lease uses the directory's age, so a directory still being created is kept.
+    Symlinks, nested folders, unrelated names, and permission errors are left
+    in place. The lease is locked and checked again immediately before deletion.
+    """
+    removed: list[Path] = []
+    try:
+        if not temp_root.exists() or not temp_root.is_dir() or temp_root.is_symlink():
+            return removed
+        children = list(temp_root.iterdir())
+    except OSError:
+        return removed
+    active = list(active_paths)
+    for child in children:
+        lease_fd: int | None = None
+        try:
+            if not _owned_upload_directory(child, temp_root, project_root):
+                continue
+            if _directory_is_active(child, active):
+                continue
+            lease = child / UPLOAD_LEASE_NAME
+            if lease.is_symlink():
+                continue
+            if lease.exists():
+                lease_fd = _expired_lease_is_locked(child, now, max_age_seconds)
+                if lease_fd is None:
+                    continue
+            else:
+                age = now - child.stat().st_mtime
+                if age < max_age_seconds:
+                    continue
+            if _remove_owned_directory(child):
+                removed.append(child)
+        except OSError:
+            continue
+        finally:
+            if lease_fd is not None:
+                try:
+                    fcntl.flock(lease_fd, fcntl.LOCK_UN)
+                except OSError:
+                    pass
+                os.close(lease_fd)
+    return removed
 
 
 def remember_upload(records: list[dict], name: str, path: Path, root: Path) -> list[dict]:
@@ -281,23 +540,34 @@ def upload_token(item: object) -> str:
     return f"{name}:{size}"
 
 
-def consume_uploads(files, records: list[dict], seen: list[str], root: Path):
-    """Store newly dropped files and return the catalog key of the last one."""
+def consume_uploads(
+    files,
+    records: list[dict],
+    seen: list[str],
+    root: Path,
+    session_id: str | None = None,
+):
+    """Store newly dropped CSV and JSON files. Other extensions are refused."""
     items = files or []
     if not isinstance(items, (list, tuple)):
         items = [items]
     selected: str | None = None
     seen_tokens = list(seen)
     current = list(records)
+    errors: list[str] = []
     for item in items:
         token = upload_token(item)
         if token in seen_tokens:
             continue
-        path = store_upload(item.name, item.getvalue()).resolve()
-        current = remember_upload(current, item.name, path, root)
         seen_tokens.append(token)
+        try:
+            path = store_upload(item.name, item.getvalue(), session_id).resolve()
+        except InspectionError as exc:
+            errors.append(str(exc))
+            continue
+        current = remember_upload(current, item.name, path, root)
         selected = f"upload:{path}"
-    return current, seen_tokens, selected
+    return current, seen_tokens, selected, errors
 
 
 def parse_missing_tokens(text: str) -> list[str]:
@@ -434,6 +704,28 @@ def reject_protected_output(directory: Path, root: Path) -> None:
             raise InspectionError(
                 f"Reports are not written into {name}/. Choose a different output directory."
             )
+
+
+def tracked_report_overwrites(
+    output_dir: str,
+    source_name: str,
+    report_format: str,
+    root: Path,
+) -> list[Path]:
+    """Existing files inside the tracked reports directory that a save would replace."""
+    directory = resolve_output_directory(output_dir, root)
+    reports = (root.resolve() / "reports").resolve()
+    if directory != reports and reports not in directory.parents:
+        return []
+    source = Path(source_name).name
+    if source in {"", ".", ".."}:
+        source = "dataset"
+    names: list[str] = []
+    if report_format in {"markdown", "both"}:
+        names.append(f"{source}.inspection.md")
+    if report_format in {"json", "both"}:
+        names.append(f"{source}.inspection.json")
+    return [directory / name for name in names if (directory / name).exists()]
 
 
 def save_reports(
@@ -1103,6 +1395,16 @@ def inject_css() -> None:
             color: #1C2824 !important;
             border: 1px dashed #8C867C !important;
             border-radius: 2px !important;
+            height: auto !important;
+            min-height: 5.75rem;
+        }
+        [data-testid="stFileChips"] {
+            max-width: 100%;
+            max-height: none !important;
+            height: auto !important;
+        }
+        [data-testid="stFileChip"] {
+            max-width: 100%;
         }
         [data-testid="stFileUploaderDropzone"] span,
         [data-testid="stFileUploaderDropzone"] small,
@@ -1219,9 +1521,44 @@ def inject_css() -> None:
     )
 
 
+def default_export_directory() -> str:
+    """A directory outside the repository for reports saved from the page."""
+    return str(Path(tempfile.gettempdir()) / "sdi-exports")
+
+
+def _maintain_upload_directories() -> None:
+    """Refresh this session's leases, then remove abandoned upload directories."""
+    session_id = str(st.session_state.get("upload_session_id") or "")
+    if not _valid_session_id(session_id):
+        session_id = new_session_id()
+        st.session_state["upload_session_id"] = session_id
+    paths = [
+        Path(record["path"])
+        for record in st.session_state.get("uploads", [])
+        if record.get("path")
+    ]
+    temp_root = Path(tempfile.gettempdir())
+    try:
+        refresh_upload_leases(
+            paths,
+            session_id,
+            temp_root=temp_root,
+            project_root=ROOT,
+        )
+        cleanup_stale_uploads(
+            temp_root,
+            now=time.time(),
+            active_paths=paths,
+            project_root=ROOT,
+        )
+    except OSError:
+        return
+
+
 def _initial_state() -> dict:
     state: dict = {
-        "output_dir": "reports",
+        "output_dir": default_export_directory(),
+        "upload_session_id": new_session_id(),
         "report_format": "both",
         "show_debug": False,
         "uploads": [],
@@ -1236,6 +1573,7 @@ def _initial_state() -> dict:
         "inspected_key": None,
         "save_message": None,
         "save_error": None,
+        "save_confirm_files": None,
         "config_message": None,
         "test_result": None,
     }
@@ -1263,6 +1601,7 @@ def _finish_inspection(entry: CatalogEntry | None, outcome: InspectionOutcome) -
     st.session_state["inspected_key"] = None if entry is None else entry.key
     st.session_state["save_message"] = None
     st.session_state["save_error"] = None
+    st.session_state["save_confirm_files"] = None
 
 
 def _inspect_selected(entry: CatalogEntry | None) -> None:
@@ -1270,6 +1609,8 @@ def _inspect_selected(entry: CatalogEntry | None) -> None:
         _finish_inspection(None, InspectionOutcome(report=None, error=NO_DATASET_MESSAGE))
         return
     try:
+        require_dataset_name(entry.name)
+        require_dataset_name(entry.path.name)
         config = read_form(st.session_state)
     except InspectionError as exc:
         _finish_inspection(entry, InspectionOutcome(report=None, error=str(exc)))
@@ -1283,25 +1624,31 @@ def _inspect_selected(entry: CatalogEntry | None) -> None:
     _finish_inspection(entry, outcome)
 
 
-def _save_current() -> None:
+def _save_current(*, confirmed: bool = False) -> None:
     report = st.session_state.get("report")
     name = st.session_state.get("download_name")
     if report is None or not name:
         st.session_state["save_error"] = "Inspect a dataset before saving reports."
         st.session_state["save_message"] = None
         return
+    output_dir = str(st.session_state.get("output_dir", default_export_directory()))
+    report_format = str(st.session_state.get("report_format", "both"))
     try:
-        written = save_reports(
-            report,
-            name,
-            str(st.session_state.get("output_dir", "reports")),
-            str(st.session_state.get("report_format", "both")),
-            ROOT,
-        )
+        clashes = [] if confirmed else tracked_report_overwrites(output_dir, name, report_format, ROOT)
+        if clashes:
+            st.session_state["save_error"] = None
+            st.session_state["save_message"] = None
+            st.session_state["save_confirm_files"] = [
+                display_path(path, ROOT) for path in clashes
+            ]
+            return
+        written = save_reports(report, name, output_dir, report_format, ROOT)
     except InspectionError as exc:
+        st.session_state["save_confirm_files"] = None
         st.session_state["save_error"] = str(exc)
         st.session_state["save_message"] = None
         return
+    st.session_state["save_confirm_files"] = None
     st.session_state["save_error"] = None
     st.session_state["save_message"] = "Wrote " + ", ".join(
         display_path(path, ROOT) for path in written
@@ -1507,7 +1854,12 @@ def _render_report(payload: dict, markdown: str, json_text: str, stem: str) -> N
         st.text_input(
             "Output directory",
             key="output_dir",
-            help="Relative to the repository unless the path is absolute. The default is reports.",
+            help=(
+                "Absolute path, or a path relative to the repository. "
+                "The default is a temporary export directory, so a normal save "
+                "does not replace the samples in reports/. "
+                "Saving into reports/ asks for confirmation before an existing file is replaced."
+            ),
         )
     with save_right:
         st.radio(
@@ -1519,6 +1871,16 @@ def _render_report(payload: dict, markdown: str, json_text: str, stem: str) -> N
         )
     if st.button("Save reports", key="save_reports"):
         _save_current()
+    pending = st.session_state.get("save_confirm_files") or []
+    if pending:
+        _banner(
+            "warn",
+            "Saving would replace files in reports/: "
+            + ", ".join(str(path) for path in pending)
+            + ". Choose Replace files in reports/ to continue.",
+        )
+        if st.button("Replace files in reports/", key="confirm_overwrite"):
+            _save_current(confirmed=True)
     if st.session_state.get("save_error"):
         _banner("error", str(st.session_state["save_error"]))
     if st.session_state.get("save_message"):
@@ -1705,14 +2067,19 @@ def _render_sidebar(entries: list[CatalogEntry]) -> None:
 
 def _prepare_catalog(uploads) -> list[CatalogEntry]:
     if uploads:
-        records, seen, selected = consume_uploads(
+        records, seen, selected, errors = consume_uploads(
             uploads,
             list(st.session_state.get("uploads", [])),
             list(st.session_state.get("seen_uploads", [])),
             ROOT,
+            str(st.session_state.get("upload_session_id") or "") or None,
         )
         st.session_state["uploads"] = records
         st.session_state["seen_uploads"] = seen
+        if errors:
+            st.session_state["upload_error"] = errors[-1]
+        elif selected is not None:
+            st.session_state["upload_error"] = None
         if selected is not None:
             st.session_state["selected_key"] = selected
     elif st.session_state.get("seen_uploads"):
@@ -1734,6 +2101,7 @@ def main() -> None:
     )
     inject_css()
     _ensure_state()
+    _maintain_upload_directories()
     st.markdown("# Smart Data Inspector")
     st.markdown(
         '<p class="lede">Upload a CSV or JSON file. The format is detected from the file name. '
@@ -1742,11 +2110,14 @@ def main() -> None:
     )
     dataset_upload = st.file_uploader(
         "Dataset file",
+        type=["csv", "json"],
         accept_multiple_files=True,
         key="dataset_upload",
-        help="Browse or drop a file. CSV and JSON are inspected. Any other extension is reported by the inspection engine.",
+        help="Browse or drop a .csv or .json file. The format is detected from the file name.",
     )
     entries = _prepare_catalog(dataset_upload)
+    if st.session_state.get("upload_error"):
+        _banner("error", str(st.session_state["upload_error"]))
     with st.sidebar:
         st.caption(f"Version {__version__}")
         _render_sidebar(entries)

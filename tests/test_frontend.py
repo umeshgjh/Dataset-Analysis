@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import threading
+import time
 from pathlib import Path
 
 from smart_inspector import ALL_CHECKS, InspectionConfig
@@ -19,7 +22,13 @@ from app import (
     column_table,
     config_document,
     configuration_frame,
+    STALE_UPLOAD_SECONDS,
+    UPLOAD_MARKER_NAME,
+    UPLOAD_MARKER_TEXT,
+    UPLOAD_LEASE_NAME,
+    cleanup_stale_uploads,
     consume_uploads,
+    default_export_directory,
     definition_lines,
     discard_upload,
     duplicate_definition,
@@ -32,12 +41,15 @@ from app import (
     format_size,
     load_config_file,
     missing_table,
+    new_session_id,
     note_table,
     numeric_table,
     parse_missing_tokens,
     profile_table,
     project_test_command,
     read_form,
+    refresh_upload_leases,
+    require_dataset_name,
     remember_upload,
     remove_upload,
     run_inspection,
@@ -47,8 +59,11 @@ from app import (
     store_outcome,
     store_upload,
     sync_report_to_selection,
+    tracked_report_overwrites,
     upload_entries,
     write_upload,
+    write_upload_lease,
+    _initial_state,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -222,7 +237,7 @@ def test_empty_catalog_does_not_select_a_project_file():
     assert "discover_datasets" not in source
     assert "Refresh datasets" not in source
     assert "Load examples/config.json" not in source
-    assert 'type=["csv", "json"]' not in source
+    assert 'type=["csv", "json"]' in source
     assert "materials_piezoelectric_properties" not in source
 
 
@@ -323,28 +338,231 @@ def test_missing_upload_records_are_dropped(tmp_path: Path):
 
 
 def test_consume_uploads_stores_one_temporary_copy_per_file():
-    first_records, seen, selected = consume_uploads(
+    first_records, seen, selected, errors = consume_uploads(
         [_Upload("notes.csv", b"a,b\n1,2\n")],
         [],
         [],
         ROOT,
     )
+    assert errors == []
     path = Path(first_records[0]["path"])
     try:
         assert path.name == "notes.csv"
         assert ROOT.resolve() not in path.resolve().parents
         assert selected == f"upload:{path.resolve()}"
-        again, seen_again, selected_again = consume_uploads(
+        again, seen_again, selected_again, errors_again = consume_uploads(
             [_Upload("notes.csv", b"a,b\n1,2\n")],
             first_records,
             seen,
             ROOT,
         )
+        assert errors_again == []
         assert again == first_records
         assert seen_again == seen
         assert selected_again is None
     finally:
         discard_upload(path, ROOT)
+
+
+def test_frontend_accepts_csv_and_json_and_rejects_other_names(tmp_path: Path):
+    require_dataset_name("Notes.CSV")
+    require_dataset_name("lab.JSON")
+    for name in ("notes.txt", "notes", "notes.csv.txt", "../secrets.env"):
+        try:
+            store_upload(name, b"not a table")
+        except InspectionError as exc:
+            message = str(exc)
+        else:
+            raise AssertionError(f"{name} was stored")
+        assert "Unsupported file extension" in message
+        assert ".csv or .json" in message
+    records, seen, selected, errors = consume_uploads(
+        [
+            _Upload("kept.csv", b"a,b\n1,2\n", file_id="csv"),
+            _Upload("notes.txt", b"not a table", file_id="txt"),
+            _Upload("kept.json", b"[]", file_id="json"),
+        ],
+        [],
+        [],
+        ROOT,
+    )
+    created = [Path(record["path"]) for record in records]
+    try:
+        assert [record["name"] for record in records] == ["kept.csv", "kept.json"]
+        assert selected == f"upload:{created[-1].resolve()}"
+        assert len(errors) == 1
+        assert "Unsupported file extension '.txt'" in errors[0]
+        assert not any(path.name == "notes.txt" for path in tmp_path.rglob("*"))
+        refused = run_inspection(ROOT / "examples" / "nested_document.json", _config())
+        assert refused.report is None
+        assert refused.error is not None
+        assert "Unsupported JSON structure" in refused.error
+    finally:
+        for path in created:
+            discard_upload(path, ROOT)
+
+
+def _owned_upload(temp_root: Path, name: str, modified_at: float) -> Path:
+    directory = temp_root / name
+    directory.mkdir()
+    (directory / "notes.csv").write_bytes(b"a,b\n1,2\n")
+    (directory / UPLOAD_MARKER_NAME).write_bytes(UPLOAD_MARKER_TEXT)
+    os.utime(directory / "notes.csv", (modified_at, modified_at))
+    os.utime(directory / UPLOAD_MARKER_NAME, (modified_at, modified_at))
+    os.utime(directory, (modified_at, modified_at))
+    return directory
+
+
+def test_cleanup_removes_only_stale_owned_upload_directories(tmp_path: Path):
+    now = 1_800_000_000.0
+    stale = _owned_upload(tmp_path, "sdi-upload-stale", now - STALE_UPLOAD_SECONDS - 60)
+    recent = _owned_upload(tmp_path, "sdi-upload-recent", now - 60)
+    active = _owned_upload(tmp_path, "sdi-upload-active", now - STALE_UPLOAD_SECONDS - 120)
+    foreign = tmp_path / "sdi-upload-foreign"
+    foreign.mkdir()
+    (foreign / "notes.csv").write_bytes(b"keep")
+    os.utime(foreign, (now - STALE_UPLOAD_SECONDS - 60, now - STALE_UPLOAD_SECONDS - 60))
+    unrelated = tmp_path / "other-temp"
+    unrelated.mkdir()
+    (unrelated / "keep.txt").write_text("keep", encoding="utf-8")
+    loose = tmp_path / "sdi-upload-loose.csv"
+    loose.write_bytes(b"keep")
+    nested = _owned_upload(tmp_path, "sdi-upload-nested", now - STALE_UPLOAD_SECONDS - 60)
+    (nested / "nested").mkdir()
+    link_target = tmp_path / "outside"
+    link_target.mkdir()
+    (tmp_path / "sdi-upload-link").symlink_to(link_target, target_is_directory=True)
+    removed = cleanup_stale_uploads(
+        tmp_path,
+        now=now,
+        active_paths=[active / "notes.csv"],
+        project_root=ROOT,
+    )
+    assert removed == [stale]
+    assert not stale.exists()
+    assert recent.is_dir()
+    assert (active / "notes.csv").is_file()
+    assert (foreign / "notes.csv").read_bytes() == b"keep"
+    assert (unrelated / "keep.txt").is_file()
+    assert loose.is_file()
+    assert nested.is_dir()
+    assert link_target.is_dir()
+    assert (tmp_path / "sdi-upload-link").is_symlink()
+
+
+def test_cleanup_ignores_a_missing_directory_and_project_owned_paths(tmp_path: Path):
+    missing = tmp_path / "does-not-exist"
+    assert cleanup_stale_uploads(missing, now=1_800_000_000.0, project_root=ROOT) == []
+    now = 1_800_000_000.0
+    inside = _owned_upload(tmp_path, "sdi-upload-project", now - STALE_UPLOAD_SECONDS - 60)
+    removed = cleanup_stale_uploads(tmp_path, now=now, project_root=tmp_path)
+    assert removed == []
+    assert inside.is_dir()
+    sample = ROOT / "examples" / "lab_observations.json"
+    before = sample.read_bytes()
+    cleanup_stale_uploads(ROOT, now=now, project_root=ROOT)
+    assert sample.read_bytes() == before
+
+
+def test_cleanup_keeps_another_sessions_live_upload_after_24_hours(tmp_path: Path):
+    now = time.time()
+    old = now - STALE_UPLOAD_SECONDS - 3600
+    session_a = new_session_id()
+    session_b = new_session_id()
+    live = _owned_upload(tmp_path, "sdi-upload-session-a", old)
+    abandoned = _owned_upload(tmp_path, "sdi-upload-session-b", old)
+    write_upload_lease(live, session_a)
+    write_upload_lease(abandoned, session_b)
+    os.utime(abandoned / UPLOAD_LEASE_NAME, (old, old))
+    os.utime(live, (old, old))
+    os.utime(abandoned, (old, old))
+    removed = cleanup_stale_uploads(tmp_path, now=now, project_root=ROOT)
+    assert removed == [abandoned]
+    assert (live / "notes.csv").is_file()
+    assert (live / UPLOAD_LEASE_NAME).read_text(encoding="ascii") == f"{session_a}\n"
+    os.utime(live / UPLOAD_LEASE_NAME, (old, old))
+    refresh_upload_leases(
+        [live / "notes.csv"],
+        session_a,
+        temp_root=tmp_path,
+        project_root=ROOT,
+    )
+    os.utime(live, (old, old))
+    assert cleanup_stale_uploads(tmp_path, now=time.time(), project_root=ROOT) == []
+    assert live.is_dir()
+
+
+def test_cleanup_waits_for_a_lease_refresh_before_deleting(tmp_path: Path):
+    import fcntl
+
+    now = time.time()
+    old = now - STALE_UPLOAD_SECONDS - 60
+    directory = _owned_upload(tmp_path, "sdi-upload-race", old)
+    session_a = new_session_id()
+    session_b = new_session_id()
+    write_upload_lease(directory, session_a)
+    os.utime(directory, (old, old))
+    os.utime(directory / UPLOAD_LEASE_NAME, (old, old))
+    lease = directory / UPLOAD_LEASE_NAME
+    fd = os.open(lease, os.O_RDWR | os.O_NOFOLLOW)
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    result: dict[str, list[Path]] = {}
+
+    def run_cleanup() -> None:
+        result["removed"] = cleanup_stale_uploads(tmp_path, now=now, project_root=ROOT)
+
+    worker = threading.Thread(target=run_cleanup)
+    worker.start()
+    time.sleep(0.2)
+    os.ftruncate(fd, 0)
+    os.lseek(fd, 0, os.SEEK_SET)
+    os.write(fd, f"{session_b}\n".encode("ascii"))
+    os.fsync(fd)
+    fcntl.flock(fd, fcntl.LOCK_UN)
+    os.close(fd)
+    worker.join(timeout=5)
+    assert not worker.is_alive()
+    assert result["removed"] == []
+    assert (directory / "notes.csv").is_file()
+    assert (directory / UPLOAD_LEASE_NAME).read_text(encoding="ascii") == f"{session_b}\n"
+
+
+def test_saving_over_tracked_reports_lists_existing_files(tmp_path: Path):
+    root = tmp_path / "proj"
+    reports = root / "reports"
+    reports.mkdir(parents=True)
+    markdown = reports / "lab_observations.json.inspection.md"
+    document = reports / "lab_observations.json.inspection.json"
+    markdown.write_text("sample\n", encoding="utf-8")
+    document.write_text("{}\n", encoding="utf-8")
+    clashes = tracked_report_overwrites("reports", "lab_observations.json", "both", root)
+    assert clashes == [markdown, document]
+    assert tracked_report_overwrites("reports", "lab_observations.json", "markdown", root) == [markdown]
+    assert tracked_report_overwrites("reports", "new_file.csv", "both", root) == []
+    assert tracked_report_overwrites(str(tmp_path / "safe"), "lab_observations.json", "both", root) == []
+    assert markdown.read_text(encoding="utf-8") == "sample\n"
+
+
+def test_save_default_does_not_target_sample_reports():
+    destination = Path(default_export_directory())
+    assert destination.name == "sdi-exports"
+    assert ROOT.resolve() not in destination.resolve().parents
+    assert destination.resolve() != (ROOT / "reports").resolve()
+    assert _initial_state()["output_dir"] == str(destination)
+
+
+def test_cleanup_permission_error_leaves_the_directory(tmp_path: Path, monkeypatch):
+    now = 1_800_000_000.0
+    directory = _owned_upload(tmp_path, "sdi-upload-locked", now - STALE_UPLOAD_SECONDS - 60)
+
+    def refuse(self, *args, **kwargs):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(Path, "unlink", refuse)
+    removed = cleanup_stale_uploads(tmp_path, now=now, project_root=ROOT)
+    assert removed == []
+    assert directory.is_dir()
+    assert (directory / "notes.csv").is_file()
 
 
 def test_parse_missing_tokens_splits_lines_and_commas():
@@ -716,7 +934,7 @@ def test_app_starts_without_a_dataset_and_downloads_follow_the_upload():
     assert "Refresh datasets" not in page
     assert "Load examples/config.json" not in page
     dataset = next(item for item in app.file_uploader if item.label == "Dataset file")
-    assert dataset.allowed_type == []
+    assert dataset.allowed_type == [".csv", ".json"]
     assert dataset.accept_multiple_files is True
     config = next(item for item in app.file_uploader if item.label == "Configuration JSON")
     assert config.allowed_type == [".json"]
@@ -770,12 +988,12 @@ def test_app_starts_without_a_dataset_and_downloads_follow_the_upload():
     assert "Download Markdown" not in [item.label for item in app.download_button]
     dataset = next(item for item in app.file_uploader if item.label == "Dataset file")
     app = dataset.upload("notes.txt", b"not a table", "text/plain").run()
-    page = "\n".join(item.value for item in app.markdown)
-    assert "notes.txt" in page
-    assert "unsupported" in page
-    app = next(item for item in app.button if item.label == "Inspect dataset").click().run()
+    assert app.exception
+    assert "Invalid file extension" in app.exception[0].message
+    assert ".txt" in app.exception[0].message
+    assert ".csv" in app.exception[0].message
+    assert "notes.txt" not in [record["name"] for record in app.session_state["uploads"]]
     assert app.session_state["markdown"] is None
-    assert "Unsupported file extension" in (app.session_state["error"] or "")
     assert "Download Markdown" not in [item.label for item in app.download_button]
     try:
         for record in list(app.session_state["uploads"]):

@@ -4,6 +4,12 @@ Smart Data Inspector reads an unfamiliar CSV or JSON table and writes a report o
 
 It does not clean the data, assign an overall quality score, or treat a statistical outlier as a confirmed error. The same inspection engine serves the Python API, the command-line interface, and the Streamlit application.
 
+## Authorship
+
+The project author is [umeshgjh](https://github.com/umeshgjh). I conceived, structured, and directed the project. That covered the problem definition and requirements, the system architecture and project structure, the inspection methodology and quality checks, the design and functional decisions, the features to include and the direction of their implementation, and the review, evaluation, and validation of the finished system.
+
+AI coding tools assisted that work under my direction. ChatGPT was used for requirements analysis, implementation guidance, and code review. Cursor, including Grok 4.7, was used for code generation, implementation, debugging, test development, documentation refinement, and code review. I made the architectural and functional decisions and reviewed the resulting implementation.
+
 ## Features
 
 - CSV and JSON input, with missing JSON keys treated as missing values.
@@ -66,17 +72,19 @@ On Python 3.9 the command exits with a short version error and no traceback.
 ## Command-line usage
 
 ```bash
-python inspector.py inspect examples/research_data.csv
-python inspector.py inspect examples/research_data.json --config examples/config.json
-python inspector.py inspect data.csv --output-dir reports --format both
-python inspector.py inspect data.csv --format markdown
-python inspector.py inspect data.csv --missingness-threshold 0.1 --outlier-multiplier 3
-python inspector.py inspect data.csv --disable-check outliers --disable-check high_cardinality
+OUT="${TMPDIR:-/tmp}/sdi-reports"
+mkdir -p "$OUT"
+python inspector.py inspect examples/research_data.csv --output-dir "$OUT"
+python inspector.py inspect examples/research_data.json --config examples/config.json --output-dir "$OUT"
+python inspector.py inspect data.csv --output-dir "$OUT" --format both
+python inspector.py inspect data.csv --output-dir "$OUT" --format markdown
+python inspector.py inspect data.csv --output-dir "$OUT" --missingness-threshold 0.1 --outlier-multiplier 3
+python inspector.py inspect data.csv --output-dir "$OUT" --disable-check outliers --disable-check high_cardinality
 python inspector.py --help
-python -m smart_inspector inspect examples/research_data.csv --format json
+python -m smart_inspector inspect examples/research_data.csv --format json --output-dir "$OUT"
 ```
 
-`--format` is `markdown`, `json`, or `both` (the default). Reports are written to `--output-dir`, which defaults to `reports` and is created if needed. File names keep the source extension so `data.csv` and `data.json` do not overwrite each other. A fresh report records the absolute path of the file on the machine that ran the inspection. The sample reports already in `reports/` keep the relative path and omit that machine-specific absolute path:
+`--format` is `markdown`, `json`, or `both` (the default). Reports are written to `--output-dir`, which defaults to `reports` and is created if needed. File names keep the source extension so `data.csv` and `data.json` do not overwrite each other. The commands above pass a temporary directory so a fresh run does not replace the committed samples. A newly generated report records the absolute path of the file on the machine that ran the inspection. The sample reports already in `reports/` keep the relative path and omit that machine-specific absolute path:
 
 - `reports/research_data.csv.inspection.md`
 - `reports/research_data.csv.inspection.json`
@@ -136,13 +144,15 @@ Error: Unsupported JSON structure: the root value is an object. Provide a top-le
 ```
 
 ```bash
-python inspector.py inspect datasets/materials_piezoelectric_properties.csv --output-dir reports
-python inspector.py inspect examples/lab_observations.json --output-dir reports
-python inspector.py inspect examples/corrupted_observations.csv --output-dir reports
-python inspector.py inspect examples/nested_document.json --output-dir reports
+OUT="${TMPDIR:-/tmp}/sdi-reports"
+mkdir -p "$OUT"
+python inspector.py inspect datasets/materials_piezoelectric_properties.csv --output-dir "$OUT"
+python inspector.py inspect examples/lab_observations.json --output-dir "$OUT"
+python inspector.py inspect examples/corrupted_observations.csv --output-dir "$OUT"
+python inspector.py inspect examples/nested_document.json --output-dir "$OUT"
 ```
 
-The first three commands write these reports:
+Those commands write new reports under `$OUT`. The repository already contains these committed samples, with the local absolute path removed:
 
 - `reports/materials_piezoelectric_properties.csv.inspection.md`
 - `reports/materials_piezoelectric_properties.csv.inspection.json`
@@ -160,12 +170,16 @@ The nested-document command exits with status 1 and does not write a report.
 ## Python API
 
 ```python
+import tempfile
+from pathlib import Path
+
 from smart_inspector import DataInspector
 
 inspector = DataInspector("examples/research_data.csv")
 report = inspector.inspect()
-report.to_markdown("reports/research_data.csv.inspection.md")
-report.to_json("reports/research_data.csv.inspection.json")
+output = Path(tempfile.mkdtemp(prefix="sdi-reports-"))
+report.to_markdown(output / "research_data.csv.inspection.md")
+report.to_json(output / "research_data.csv.inspection.json")
 
 custom = DataInspector(
     "examples/research_data.csv",
@@ -345,11 +359,11 @@ python -m pip install -r requirements.txt
 streamlit run app.py
 ```
 
-**Dataset.** The page opens with an upload area and no dataset selected. Choose a file or drop it on the page. The format is taken from the file extension; the page does not ask you to pick CSV or JSON. After the upload it shows the file name, detected format, size, and modification time. The bytes are copied to a temporary directory outside the repository. Upload another file to inspect that file instead. **Remove this file** deletes only the temporary copy. Several uploads can stay in the session, and the sidebar chooses which one is current. Changing the current file clears the previous report, so a download cannot belong to a file you are no longer viewing.
+**Dataset.** The page opens with an upload area and no dataset selected. Choose a `.csv` or `.json` file, or drop it on the page. The uploader accepts only those two extensions. The format is taken from the file name; the page does not ask you to pick CSV or JSON. Another extension is refused before inspection, and the inspection engine still checks the contents of an accepted file. After the upload it shows the file name, detected format, size, and modification time. The bytes are copied to a temporary directory outside the repository. Each session keeps a lease on its directories and refreshes that lease while the page is in use. A directory is removed only after its lease has been idle for 24 hours. A lease that is still current keeps the directory, even when the upload itself is older than 24 hours. Upload another file to inspect that file instead. **Remove this file** deletes only the temporary copy. Several uploads can stay in the session, and the sidebar chooses which one is current. Changing the current file clears the previous report, so a download cannot belong to a file you are no longer viewing.
 
 **Configuration.** The form exposes every inspection option: missingness, the IQR multiplier, the outlier sample minimum, high cardinality, categorical label length, the dominance threshold, the six checks, and the missing-token list. Outlier method stays `iqr`, which is the only implemented method. **Apply configuration file** uses the command-line config reader on a JSON file you supply. **Reset to defaults** restores `InspectionConfig`. **Download configuration** writes a JSON object that can be loaded again. Invalid configuration shows the validator's message.
 
-**Inspection and reports.** **Inspect dataset** runs the engine. The page then shows the file and runtime facts, the dimensions and column names, column types and classification notes, missing values, duplicate rows and their definition, numeric summaries, categorical summaries, every finding, the configuration copied into the report, and the definitions. **Download Markdown** and **Download JSON** are `to_markdown()` and `to_json()` for that inspection. **Save reports** writes `{filename}.inspection.md` and `{filename}.inspection.json` into the chosen directory (the default is `reports/`). Saving into `datasets/` or `examples/` is refused. A file the engine cannot inspect shows that error and clears the previous result, including its downloads. **Include error details** adds the traceback, which is the `--debug` choice.
+**Inspection and reports.** **Inspect dataset** runs the engine. The page then shows the file and runtime facts, the dimensions and column names, column types and classification notes, missing values, duplicate rows and their definition, numeric summaries, categorical summaries, every finding, the configuration copied into the report, and the definitions. **Download Markdown** and **Download JSON** are `to_markdown()` and `to_json()` for that inspection. **Save reports** writes `{filename}.inspection.md` and `{filename}.inspection.json` into the chosen directory. The default is a temporary `sdi-exports` directory outside the repository, so a normal save does not replace the committed samples. Type another path to choose a different location. If that path is `reports/` and a report file already exists there, the page asks for confirmation before replacing it. Saving into `datasets/` or `examples/` is refused. A file the engine cannot inspect shows that error and clears the previous result, including its downloads. **Include error details** adds the traceback, which is the `--debug` choice.
 
 **Developer.** **Run tests** executes `python -m pytest -q` in the repository. The command cannot be edited on the page.
 
@@ -365,20 +379,28 @@ With the virtual environment activated, from the repository root:
 
 ```bash
 pytest
-python inspector.py inspect examples/research_data.csv --output-dir reports
-python inspector.py inspect examples/research_data.json --config examples/config.json --output-dir reports
-python inspector.py inspect datasets/materials_piezoelectric_properties.csv --output-dir reports
-python inspector.py inspect examples/lab_observations.json --output-dir reports
-python inspector.py inspect examples/corrupted_observations.csv --output-dir reports
+OUT="${TMPDIR:-/tmp}/sdi-reports"
+mkdir -p "$OUT"
+python inspector.py inspect examples/research_data.csv --output-dir "$OUT"
+python inspector.py inspect examples/research_data.json --config examples/config.json --output-dir "$OUT"
+python inspector.py inspect datasets/materials_piezoelectric_properties.csv --output-dir "$OUT"
+python inspector.py inspect examples/lab_observations.json --output-dir "$OUT"
+python inspector.py inspect examples/corrupted_observations.csv --output-dir "$OUT"
 python - << 'PY'
+import tempfile
+from pathlib import Path
 from smart_inspector import DataInspector
 report = DataInspector("examples/research_data.csv").inspect()
 print(report)
 assert report.to_dict()["overview"]["row_count"] == 11
-report.to_markdown("reports/research_data.csv.inspection.md")
-report.to_json("reports/research_data.csv.inspection.json")
+output = Path(tempfile.mkdtemp(prefix="sdi-reports-"))
+report.to_markdown(output / "research_data.csv.inspection.md")
+report.to_json(output / "research_data.csv.inspection.json")
+print(output)
 PY
 ```
+
+These commands write new reports to a temporary directory. They do not modify the committed files in `reports/`.
 
 `pytest` does not download data. It covers CSV and JSON parsing, missing values, type inference, numeric and categorical summaries, duplicate detection, all six quality checks, Markdown and JSON output, invalid paths, empty inputs, nested JSON, configuration validation, the demonstration files, and the assignment CSV. The reflection, demonstration script, and submission checklist are in `docs/reflection.md`, `docs/demo-script.md`, and `docs/submission-checklist.md`.
 

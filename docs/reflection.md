@@ -6,6 +6,6 @@ One important implementation decision was to distinguish numerical measurements 
 
 The application uses a modular Python architecture with a reusable API, command-line interface, and Markdown and JSON report generation. It was validated using the assignment's materials dataset, a compliant flat JSON example, and a deliberately corrupted dataset. The implementation passed the automated test suite, alongside CLI and API verification.
 
-The project took approximately **3 hours** to develop and refine. I used **ChatGPT** for requirements analysis, design decisions, implementation guidance, and code review, and **Cursor with Grok 4.7** for code generation, debugging, refinement, and verification. AI-generated code was checked through source review, automated tests, and execution of the application against demonstration datasets.
+The project author is umeshgjh. The project took approximately **3 hours** to develop and refine. I used **ChatGPT** for requirements analysis, implementation guidance, and code review, and **Cursor with Grok 4.7** for code generation, debugging, test development, documentation refinement, and verification. I reviewed the resulting implementation through source review, automated tests, and execution against the demonstration datasets.
 
 A limitation is that nested JSON structures and JSON Lines are not supported. The tool focuses on explainable inspection rather than automatic data cleaning or correction.
