@@ -2,7 +2,7 @@
 
 Smart Data Inspector reads an unfamiliar CSV or JSON table and writes a report of its shape, inferred column types, missing values, duplicate rows, numeric and categorical summaries, and six explainable data-quality checks.
 
-It does not clean the data, assign an overall quality score, or treat a statistical outlier as a confirmed error. The same inspection engine serves the Python API and the command-line interface.
+It does not clean the data, assign an overall quality score, or treat a statistical outlier as a confirmed error. The same inspection engine serves the Python API, the command-line interface, and the Streamlit application.
 
 ## Features
 
@@ -18,6 +18,7 @@ It does not clean the data, assign an overall quality score, or treat a statisti
 - Validated configuration, with the settings copied into the report.
 - Markdown and JSON reports produced from the same result.
 - Deterministic results for the same file and configuration, apart from the inspection timestamp.
+- A Streamlit interface for uploading a CSV or JSON file, configuration, inspection, and the same reports.
 
 ## Supported formats and limitations
 
@@ -35,6 +36,7 @@ Other limits are listed under [Assumptions](#assumptions) and [Known limitations
 - Python 3.11 or newer
 - pandas 2.2 or newer
 - NumPy 1.26 or newer
+- Streamlit 1.49 or newer, for the browser interface
 
 pytest is included in `requirements.txt` so the test suite can be run after the same install. The tool was developed and checked with Python 3.12, pandas 3.1, and NumPy 2.5.
 
@@ -57,7 +59,7 @@ uv pip install -r requirements.txt --python .venv/bin/python
 source .venv/bin/activate
 ```
 
-`inspector.py` and `python -m smart_inspector` both work when the repository root is the working directory. The package does not need a separate editable install.
+`inspector.py` and `python -m smart_inspector` both work when the repository root is the working directory. The package does not need a separate editable install. The same inspection is available in the browser with `streamlit run app.py`; see [Frontend](#frontend).
 
 On Python 3.9 the command exits with a short version error and no traceback.
 
@@ -74,7 +76,7 @@ python inspector.py --help
 python -m smart_inspector inspect examples/research_data.csv --format json
 ```
 
-`--format` is `markdown`, `json`, or `both` (the default). Reports are written to `--output-dir`, which defaults to `reports` and is created if needed. File names keep the source extension so `data.csv` and `data.json` do not overwrite each other:
+`--format` is `markdown`, `json`, or `both` (the default). Reports are written to `--output-dir`, which defaults to `reports` and is created if needed. File names keep the source extension so `data.csv` and `data.json` do not overwrite each other. A fresh report records the absolute path of the file on the machine that ran the inspection. The sample reports already in `reports/` keep the relative path and omit that machine-specific absolute path:
 
 - `reports/research_data.csv.inspection.md`
 - `reports/research_data.csv.inspection.json`
@@ -288,6 +290,7 @@ smart_inspector/
     ├── markdown.py
     └── json_report.py
 inspector.py             CLI entry point
+app.py                   Streamlit interface over inspect() and write_reports
 tests/                   pytest fixtures, including the example and assignment files
 examples/                small demo files
 datasets/                unchanged assignment CSV
@@ -330,6 +333,31 @@ docs/                    reflection, demo script, and submission checklist
 - Samples of unexpected values and outliers are capped at 10, and embedded text is capped at 200 characters. Counts in the evidence are complete.
 - The tool loads the full file into memory and is aimed at inspection, not at a streaming warehouse job.
 - There is no imputation, no row deletion, and no overall score.
+
+## Frontend
+
+The Streamlit page calls `inspect()` and renders `InspectionReport.to_dict()`. Configuration is an `InspectionConfig`. Saved reports go through `write_reports`, the same writer as the command line. The page inspects files you upload and can write report files. It does not load a dataset on startup, and it does not modify the uploaded file. The files in `datasets/` and `examples/` remain available to the command line, the API, and the tests.
+
+From the repository root, with the virtual environment activated:
+
+```bash
+python -m pip install -r requirements.txt
+streamlit run app.py
+```
+
+**Dataset.** The page opens with an upload area and no dataset selected. Choose a file or drop it on the page. The format is taken from the file extension; the page does not ask you to pick CSV or JSON. After the upload it shows the file name, detected format, size, and modification time. The bytes are copied to a temporary directory outside the repository. Upload another file to inspect that file instead. **Remove this file** deletes only the temporary copy. Several uploads can stay in the session, and the sidebar chooses which one is current. Changing the current file clears the previous report, so a download cannot belong to a file you are no longer viewing.
+
+**Configuration.** The form exposes every inspection option: missingness, the IQR multiplier, the outlier sample minimum, high cardinality, categorical label length, the dominance threshold, the six checks, and the missing-token list. Outlier method stays `iqr`, which is the only implemented method. **Apply configuration file** uses the command-line config reader on a JSON file you supply. **Reset to defaults** restores `InspectionConfig`. **Download configuration** writes a JSON object that can be loaded again. Invalid configuration shows the validator's message.
+
+**Inspection and reports.** **Inspect dataset** runs the engine. The page then shows the file and runtime facts, the dimensions and column names, column types and classification notes, missing values, duplicate rows and their definition, numeric summaries, categorical summaries, every finding, the configuration copied into the report, and the definitions. **Download Markdown** and **Download JSON** are `to_markdown()` and `to_json()` for that inspection. **Save reports** writes `{filename}.inspection.md` and `{filename}.inspection.json` into the chosen directory (the default is `reports/`). Saving into `datasets/` or `examples/` is refused. A file the engine cannot inspect shows that error and clears the previous result, including its downloads. **Include error details** adds the traceback, which is the `--debug` choice.
+
+**Developer.** **Run tests** executes `python -m pytest -q` in the repository. The command cannot be edited on the page.
+
+These stay in the terminal:
+
+- Creating the virtual environment and installing dependencies.
+- `python inspector.py` and `python -m smart_inspector` when a script needs the process exit code (`0` success, `1` file or parse error, `2` configuration error).
+- Git, and edits to the inspection package.
 
 ## Verification
 

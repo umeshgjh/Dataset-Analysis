@@ -16,7 +16,7 @@ Severities distinguish consistency problems (`error`) from issues that may still
 | Field | Value |
 | --- | --- |
 | Path | `datasets/materials_piezoelectric_properties.csv` |
-| Absolute path | `/Users/umeshgjh/Projects/A*/Dataset-Analysis/datasets/materials_piezoelectric_properties.csv` |
+| Absolute path | `<redacted local absolute path>` |
 | Format | csv |
 | Size | 520849 bytes |
 | Encoding | utf-8 |

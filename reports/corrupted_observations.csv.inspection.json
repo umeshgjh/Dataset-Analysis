@@ -12,7 +12,7 @@
   "inspected_at": "2026-11-16T13:00:37Z",
   "input_file": {
     "path": "examples/corrupted_observations.csv",
-    "absolute_path": "/Users/umeshgjh/Projects/A*/Dataset-Analysis/examples/corrupted_observations.csv",
+    "absolute_path": "<redacted local absolute path>",
     "name": "corrupted_observations.csv",
     "format": "csv",
     "size_bytes": 335,

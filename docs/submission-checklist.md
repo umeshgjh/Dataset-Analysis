@@ -28,7 +28,7 @@ The items below match the Smart Data Inspector assignment: a local CSV and JSON 
 ## Documentation and verification
 
 - [ ] README install, CLI, API, configuration, limitations, and report paths match the commands that were run.
-- [ ] `pytest` passes. The expected result is 93 passed.
+- [ ] `pytest` passes. The last verified result is 123 passed, including the frontend tests.
 - [ ] `docs/demo-script.md` can be spoken in about 2–3 minutes against the commands above.
 - [ ] `docs/reflection.md` is under 300 words and records about 3 hours, ChatGPT, Cursor with Grok 4.7, and the checks used on generated code.
 - [ ] No virtual environment, cache, secret, or unrelated personal file is staged. Generated reports, demonstration data, and documentation are included.

@@ -16,7 +16,7 @@ Severities distinguish consistency problems (`error`) from issues that may still
 | Field | Value |
 | --- | --- |
 | Path | `examples/research_data.csv` |
-| Absolute path | `/Users/umeshgjh/Projects/A*/Dataset-Analysis/examples/research_data.csv` |
+| Absolute path | `<redacted local absolute path>` |
 | Format | csv |
 | Size | 537 bytes |
 | Encoding | utf-8 |

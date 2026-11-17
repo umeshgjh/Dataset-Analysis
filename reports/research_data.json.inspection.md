@@ -16,7 +16,7 @@ Severities distinguish consistency problems (`error`) from issues that may still
 | Field | Value |
 | --- | --- |
 | Path | `examples/research_data.json` |
-| Absolute path | `/Users/umeshgjh/Projects/A*/Dataset-Analysis/examples/research_data.json` |
+| Absolute path | `<redacted local absolute path>` |
 | Format | json |
 | Size | 432 bytes |
 | Encoding | utf-8 |

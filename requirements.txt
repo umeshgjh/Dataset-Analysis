@@ -5,3 +5,6 @@ numpy>=1.26.0
 
 # Test runner used by the verification instructions.
 pytest>=8.0.0
+
+# Local interface. It calls inspect() and does not implement its own checks.
+streamlit>=1.49.0

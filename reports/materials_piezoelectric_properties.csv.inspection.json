@@ -12,7 +12,7 @@
   "inspected_at": "2026-11-16T13:00:35Z",
   "input_file": {
     "path": "datasets/materials_piezoelectric_properties.csv",
-    "absolute_path": "/Users/umeshgjh/Projects/A*/Dataset-Analysis/datasets/materials_piezoelectric_properties.csv",
+    "absolute_path": "<redacted local absolute path>",
     "name": "materials_piezoelectric_properties.csv",
     "format": "csv",
     "size_bytes": 520849,

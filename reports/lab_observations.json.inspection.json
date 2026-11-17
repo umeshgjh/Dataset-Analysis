@@ -12,7 +12,7 @@
   "inspected_at": "2026-11-16T13:00:35Z",
   "input_file": {
     "path": "examples/lab_observations.json",
-    "absolute_path": "/Users/umeshgjh/Projects/A*/Dataset-Analysis/examples/lab_observations.json",
+    "absolute_path": "<redacted local absolute path>",
     "name": "lab_observations.json",
     "format": "json",
     "size_bytes": 1210,

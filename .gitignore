@@ -10,3 +10,10 @@ build/
 .DS_Store
 *.tmp
 *.log
+.coverage
+htmlcov/
+.idea/
+*.swp
+.env
+.env.*
+.streamlit/secrets.toml
